@@ -144,7 +144,8 @@ import {
   type ThreadCard
 } from "./cloud-tasks";
 import { WaitingStore } from "./waiting-store";
-import { MachineStore, machineRecord, machineReply, type Ask, type WorkKind } from "./machine";
+import { MachineError, MachineStore, machineRecord, machineReply, type Ask, type WorkKind } from "./machine";
+import { ATTACH_MARK, ATTACH_MAX_FILES, chatParts, keep, loadAll, loadFile, markedFile, readsPdf, type Attachment } from "./attachments";
 import { TOKEN_PAGE, dispatchHands, fingerprint, setUpHands, WORKFLOW, type HandsRepo } from "./hands-repo";
 import { fromOpenAI, toOpenAI } from "./openai-chat";
 import { SENT_STICKER, stickerMarks, withoutStickerMarks } from "./sticker-marks";
@@ -316,6 +317,8 @@ export type WebLine = {
   stickers?: { url: string; video: boolean }[];
   /** How many pictures her message has, each read from /web/picture by its place. */
   pictures?: number;
+  /** Files she attached: names and sizes. */
+  attached?: { name: string; size: number }[];
   /** A voice message: hers (its recording when she made it on the web page), or the voice this reply was said in. */
   voice?: { key: string | null; seconds: number | null; missed?: boolean };
   /** The message she was replying to. */
@@ -332,6 +335,8 @@ export type WebSay = {
   text?: string;
   /** Pictures, base64. */
   pictures?: { data?: string }[];
+  /** Files (PDF, text, code, office documents), base64, each with the name it had (attachments.ts). */
+  files?: { name?: string; data?: string }[];
   /** A voice message recorded there (WAV, WebM or MP4), base64. */
   voice?: { data?: string };
   /** A sticker's key, from a pack that is on. */
@@ -353,7 +358,7 @@ export type TelegramState = {
 };
 
 /** cloud_task's input. */
-type TaskInput = { title: string; job: string; repo?: string; follow_up_of?: string; execution?: TaskExecution; role?: string };
+type TaskInput = { title: string; job: string; repo?: string; follow_up_of?: string; execution?: TaskExecution; role?: string; files?: string[] };
 
 /**
  * A line of a thread on the web page: what was asked (the job, or their own words), the thread's own messages (for a
@@ -444,6 +449,8 @@ type WebSaidMeta = {
   voice?: { key: string; seconds: number | null };
   /** A sticker she sent, by its key. */
   sticker?: string;
+  /** Files attached: their names and sizes, for the web page (the content is in the message's parts). */
+  files?: { name: string; size: number }[];
   /** The message she replied to. */
   quote?: { who: "user" | "assistant"; text: string };
   /** The group chat it was handed to it from (groupHear). */
@@ -502,6 +509,13 @@ function letterText(answer: readonly { parts?: readonly { type: string; text?: s
     .map((part) => (part.type === "text" ? (part.text ?? "") : ""))
     .join("")
     .trim();
+}
+
+const isPictureOf = (part: { type: string; mediaType?: string }) => part.type === "file" && Boolean(part.mediaType?.startsWith("image/"));
+
+/** A user message's words without the parts that carry attached files (those show as chips, not text). */
+function withoutFiles(message: { parts: readonly { type: string; text?: string }[] }): string {
+  return textOf({ parts: message.parts.filter((part) => !(part.type === "text" && (part.text ?? "").startsWith(ATTACH_MARK))) }).trim();
 }
 
 function textOf(message: { parts?: readonly { type: string; text?: string }[] } | undefined): string {
@@ -1436,9 +1450,10 @@ export class Resident extends Think<Env> {
   machineRegister(body: unknown, trusted: boolean) { return machineReply(() => this.machines().register(body, trusted)); }
 
   /** The runner's own calls. A final receipt leaves a record in the conversation; it does not start a turn. */
-  async machineRequest(token: string, action: "heartbeat" | "poll" | "receipt", body: unknown) {
+  async machineRequest(token: string, action: "heartbeat" | "poll" | "receipt" | "file", body: unknown) {
     const machines = this.machines();
-    const answer = await machineReply(() => (action === "heartbeat" ? machines.heartbeat(token) : action === "poll" ? machines.poll(token, body) : machines.receipt(token, body)));
+    if (action === "file") return machineReply(async () => this.machineFile(await machines.workFile(token, body)));
+    const answer = await machineReply(() => (action === "heartbeat" ? machines.heartbeat(token, body) : action === "poll" ? machines.poll(token, body) : machines.receipt(token, body)));
     const finished = (answer.body as { finished?: { task: Task } }).finished;
     if (finished) {
       delete (answer.body as { finished?: unknown }).finished;
@@ -1446,6 +1461,13 @@ export class Resident extends Think<Env> {
       await this.pushWaitingAsks();
     }
     return answer;
+  }
+
+  /** A file handed to a thread, as the runner fetches it: base64 in JSON (at most 4 MB of bytes). */
+  private machineFile(file: { key: string; name: string; type: string }) {
+    const kept = this.media().get(file.key);
+    if (!kept) throw new MachineError(404, "UNKNOWN_FILE", "the file is gone");
+    return { name: file.name, type: file.type, data: base64(kept.bytes) };
   }
 
   // ---- the waiting list (waiting.ts) ----
@@ -1534,6 +1556,7 @@ export class Resident extends Think<Env> {
           job: z.string().describe("The whole job, for a thread that knows nothing else."),
           repo: z.string().optional().describe("owner/name of the GitHub repository to work in, if there is one."),
           execution: z.enum(["local", "linux", "machine"]).optional().describe("Where it runs, from the description. Leave it out for the usual place."),
+          files: z.array(z.string()).max(3).optional().describe("Keys (key=…) of files they attached in the chat, to hand to the thread. Only for a thread on their machine."),
           follow_up_of: z.string().optional().describe("The id (t_…) of an earlier task or thread this one continues; find finds it."),
           role: z.string().optional().describe("A role from their settings page (coder, reviewer, researcher, or one they added): its instructions go before your job and its threads use its model, so write only what this job needs. A follow-up keeps its thread's role.")
         }),
@@ -1633,16 +1656,25 @@ export class Resident extends Think<Env> {
     this.#turnTasks.set(id, (this.#turnTasks.get(id) ?? 0) + 1);
     const job = role ? withRole(role, input.job) : input.job;
     const unasked = this.#theirTurns.has(id) ? 0 : follows!.unasked + 1;
+    const files: Attachment[] = [];
+    const sent = this.messages.filter((message) => message.role === "user").map((message) => textOf(message));
+    for (const key of input.files ?? []) {
+      const kept = this.media().get(key);
+      const file = kept && markedFile(sent, key, kept.bytes.length);
+      if (!file) return { error: `No attached file with key ${key}.` };
+      files.push(file);
+    }
     const task = await this.startTask(
       { title: input.title, job, repo: input.repo?.trim() || follows?.repo, follows: follows?.id, execution, role: role?.name ?? "", unasked },
-      follows
+      follows,
+      files
     );
     if ("error" in task) return { error: task.error };
     return { task: task.id, title: task.title, runs: task.runs, session_url: task.sessionUrl, note: "Sent. Its result comes back to you later as a note." };
   }
 
   /** Adds a task and either starts it on a thread here or on GitHub Actions; sets a quiet check too. */
-  private async startTask(input: NewTask, follows: Task | null): Promise<Task | { error: string }> {
+  private async startTask(input: NewTask, follows: Task | null, files: Attachment[] = []): Promise<Task | { error: string }> {
     if (!this.cloudTasksOn()) return { error: "后台帮忙关着" };
     const routes = this.taskRoutes();
     // A follow-up stays where its thread ran, while that is still set up.
@@ -1651,6 +1683,7 @@ export class Resident extends Think<Env> {
     if (execution === "linux" && !routes.linux) return { error: "还没接 GitHub Actions：设置页里填一个 GitHub token" };
     // A thread on the machine stays there: its session is there.
     if (follows?.runs === "machine" && execution !== "machine") return { error: "这条线程在机器上，接着做也只能在机器上；要换地方就新派一单" };
+    if (files.length && execution !== "machine") return { error: "Files and pictures only go to a thread on their machine; this one runs elsewhere." };
     const store = this.cloudTasks();
     const added = store.add({ ...input, execution });
     if ("error" in added) return added;
@@ -1658,7 +1691,7 @@ export class Resident extends Think<Env> {
       // Theirs goes in at once (the running turn stops); the resident's own follow-up waits its turn.
       const kind: WorkKind = input.direct ? "say" : follows ? "mail" : "job";
       try {
-        this.machines().enqueue(added.task, kind, input.job);
+        this.machines().enqueue(added.task, kind, input.job, files);
       } catch (error) {
         store.drop(added.task.id);
         return { error: error instanceof Error ? error.message : String(error) };
@@ -2136,16 +2169,23 @@ export class Resident extends Think<Env> {
   }
 
   /** What they write to a thread here themselves: it goes to that thread as a task of its own, not to the resident. */
-  async webThreadSay(root: string, text: string): Promise<WebThread | { error: string }> {
+  async webThreadSay(root: string, text: string, attached: { pictures?: unknown; files?: unknown } = {}): Promise<WebThread | { error: string }> {
     if (!this.cloudTasksOn()) return { error: "后台帮忙关着" };
     const tasks = this.cloudTasks().thread(root);
     const latest = tasks.at(-1);
     if (!latest) return { error: "没有这条线程，可能太旧被清掉了" };
     if (latest.runs !== "local" && latest.runs !== "machine") return { error: "这条线程不在住户这里，去它自己的会话里说" };
-    const job = text.trim();
-    if (!job) return { error: "写点什么再发" };
-    // On the machine her words go straight to its session, stopping a running turn (machine.ts).
-    const started = await this.startTask({ title: tasks[0].title, job, repo: latest.repo, follows: latest.id, execution: latest.runs, direct: true }, latest);
+    const loaded = loadAll(attached.pictures, attached.files);
+    if ("error" in loaded) return loaded;
+    if (loaded.length && latest.runs !== "machine") return { error: "图片和文件只能发给在机器上跑的线程" };
+    let job = text.trim();
+    if (!job && !loaded.length) return { error: "写点什么再发" };
+    if (loaded.length) job = `${job}${job ? "\n\n" : ""}[attached: ${loaded.map((item) => item.name).join(", ")}]`;
+    const files = loaded.length ? keep(this.media(), loaded) : [];
+    if ("error" in files) return files;
+    // On the machine their words go straight to its session, stopping a running turn (machine.ts).
+    const started = await this.startTask({ title: tasks[0].title, job, repo: latest.repo, follows: latest.id, execution: latest.runs, direct: true }, latest, files);
+    if ("error" in started) for (const file of files) this.media().remove(file.key);
     return "error" in started ? started : this.webThread(root);
   }
 
@@ -3667,11 +3707,11 @@ export class Resident extends Think<Env> {
         via = own?.group ? "group" : meta?.messenger ? (meta.messenger.messengerId === "wecom" ? "wecom" : "telegram") : "web";
         // What a group chat handed it, and its answer, are on the group's page, not in this chat.
         if (via === "group") continue;
-        const pictures = message.parts.filter((part) => part.type === "file").length;
+        const pictures = message.parts.filter(isPictureOf).length;
         // Pictures that aged out of the conversation before media were kept: only their mark is left.
         const gone = text.match(EVICTED_PICTURE)?.length ?? 0;
         let voice: WebLine["voice"];
-        let said = text.replace(EVICTED_PICTURE, "").replace(REFUSED_PICTURE, "\n[图片被退回]").trim().replace(STAMP_PREFIX, "");
+        let said = withoutFiles(message).replace(EVICTED_PICTURE, "").replace(REFUSED_PICTURE, "\n[图片被退回]").trim().replace(STAMP_PREFIX, "");
         if (own?.quote) said = said.replace(QUOTE_MARK, "");
         if (own?.sticker) said = said.replace(STICKER_MARK, "");
         said = said
@@ -3693,6 +3733,7 @@ export class Resident extends Think<Env> {
           at,
           via,
           ...(pictures ? { pictures } : {}),
+          ...(own?.files?.length ? { attached: own.files } : {}),
           ...(voice ? { voice } : {}),
           ...(own?.quote ? { quote: own.quote } : {}),
           ...(own?.sticker ? { stickers: [{ url: `${residentPrefix(this.residentId)}/stickers/${own.sticker}`, video: sticker?.video ?? false }] } : {})
@@ -3886,6 +3927,16 @@ export class Resident extends Think<Env> {
       if ("error" in part) return part;
       pictures.push(part);
     }
+    if ((input.files?.length ?? 0) > ATTACH_MAX_FILES) return { error: `一次最多 ${ATTACH_MAX_FILES} 个文件` };
+    const pdfOk = readsPdf(this.savedModel() || this.defaultModel);
+    for (const file of input.files ?? []) {
+      const loaded = loadFile(file ?? {});
+      if ("error" in loaded) return loaded;
+      const kept = this.media().put("file", loaded.type, loaded.bytes);
+      if ("error" in kept) return kept;
+      pictures.push(...chatParts(loaded, kept.key, pdfOk));
+      (metadata.files ??= []).push({ name: loaded.name, size: loaded.bytes.length });
+    }
     if (input.voice) {
       const heardIt = await this.hearWebVoice(input.voice);
       if ("error" in heardIt) return heardIt;
@@ -4027,7 +4078,7 @@ export class Resident extends Think<Env> {
   /** A picture of a message, by its place among the message's pictures. Null when there is none (any more). */
   async webPicture(id: string, n: number): Promise<{ type: string; bytes: Uint8Array } | null> {
     const message = await this.session.getMessage(id).catch(() => null);
-    const part = message?.parts.filter((item) => item.type === "file")[n] as { mediaType?: string; url?: string } | undefined;
+    const part = message?.parts.filter(isPictureOf)[n] as { mediaType?: string; url?: string } | undefined;
     const found = part?.url?.match(/^data:([^;,]+);base64,(.*)$/s);
     if (!found || !found[1].startsWith("image/") || found[1] === "image/svg+xml") return null;
     try {

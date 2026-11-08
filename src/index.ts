@@ -287,7 +287,7 @@ async function handleWeb(request: Request, env: Env, url: URL, at: At): Promise<
     return Response.json(saved, { status: "error" in saved ? 400 : 200 });
   }
   // A message can carry pictures and a voice message, in base64: larger than the other calls, but not without end.
-  if (Number(request.headers.get("content-length") ?? 0) > (url.pathname === "/web/say" ? SAY_MAX_BYTES : JSON_MAX_BYTES)) {
+  if (Number(request.headers.get("content-length") ?? 0) > (url.pathname === "/web/say" || url.pathname === "/web/thread/say" ? SAY_MAX_BYTES : JSON_MAX_BYTES)) {
     return Response.json({ error: "发的东西太大了" }, { status: 413 });
   }
   const body =
@@ -304,6 +304,7 @@ async function handleWeb(request: Request, env: Env, url: URL, at: At): Promise<
           site?: string;
           host?: string;
           pictures?: { data?: string }[];
+          files?: { name?: string; data?: string }[];
           voice?: { data?: string };
           sticker?: string;
           quote?: string;
@@ -341,6 +342,7 @@ async function handleWeb(request: Request, env: Env, url: URL, at: At): Promise<
       const said = await agent.webSay({
         text: String(body.text ?? ""),
         ...(Array.isArray(body.pictures) ? { pictures: body.pictures.map((picture) => ({ data: String(picture?.data ?? "") })) } : {}),
+        ...(Array.isArray(body.files) ? { files: body.files.map((file) => ({ name: String(file?.name ?? ""), data: String(file?.data ?? "") })) } : {}),
         ...(body.voice ? { voice: { data: String(body.voice.data ?? "") } } : {}),
         ...(body.sticker ? { sticker: String(body.sticker) } : {}),
         ...(body.quote ? { quote: String(body.quote) } : {})
@@ -562,7 +564,7 @@ async function handleWeb(request: Request, env: Env, url: URL, at: At): Promise<
       const id = String(body.id ?? "");
       if (!THREAD_ID.test(id)) return Response.json({ error: "没有这条线程" }, { status: 404 });
       await agent.noteOrigin(at.base);
-      const said = await agent.webThreadSay(id, String(body.text ?? ""));
+      const said = await agent.webThreadSay(id, String(body.text ?? ""), { pictures: body.pictures, files: body.files });
       return Response.json(said, { status: "error" in said ? 400 : 200 });
     }
     default:
@@ -571,7 +573,7 @@ async function handleWeb(request: Request, env: Env, url: URL, at: At): Promise<
 }
 
 /** The paired machine's runner: JSON bodies of at most 16 KB, its own token as Bearer (pairing: a code instead). */
-async function handleRunner(request: Request, env: Env, at: At, action: "pair" | "heartbeat" | "poll" | "receipt"): Promise<Response> {
+async function handleRunner(request: Request, env: Env, at: At, action: "pair" | "heartbeat" | "poll" | "receipt" | "file"): Promise<Response> {
   if (request.method !== "POST") return Response.json({ error: "method not allowed" }, { status: 405 });
   const parsed = await machineReply(() => readMachineJson(request));
   const answer = (result: { status: number; body: unknown }) => Response.json(result.body, { status: result.status, headers: { "cache-control": "no-store" } });
@@ -617,8 +619,8 @@ export default {
           headers: { "content-type": file.type, "cache-control": "public, max-age=31536000, immutable", "x-content-type-options": "nosniff" }
         });
       }
-      const runner = url.pathname.match(/^\/runner\/v1\/(pair|heartbeat|poll|receipt)$/);
-      if (runner) return await handleRunner(request, env, at, runner[1] as "pair" | "heartbeat" | "poll" | "receipt");
+      const runner = url.pathname.match(/^\/runner\/v1\/(pair|heartbeat|poll|receipt|file)$/);
+      if (runner) return await handleRunner(request, env, at, runner[1] as "pair" | "heartbeat" | "poll" | "receipt" | "file");
       // A GitHub Actions run of the hands: the GitHub token to work with, and the model through the resident.
       const hands = url.pathname.match(/^\/tasks\/(t_[0-9a-f]{10})\/(hands|model\/chat\/completions)$/);
       if (hands && request.method === "POST") {

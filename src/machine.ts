@@ -4,6 +4,7 @@
 // running turn stops and the words go to the same session). Which helper, which folder and which permissions are the
 // machine's own settings: nothing here can choose them.
 import type { Sql } from "./sticker-store";
+import type { Attachment } from "./attachments";
 import { TASK_NOTE_PREFIX, type Task, type TaskStatus, type TaskStore } from "./cloud-tasks";
 
 export const RUNNER_PROTOCOL = "aelios-runner/1";
@@ -24,7 +25,7 @@ const SESSION = /^[A-Za-z0-9_.:-]{1,160}$/;
 const KEY = /^.{1,200}$/s;
 
 type Machine = { id: string; token_hash: string; label: string; created_at: number; last_seen_at: number | null; revoked_at: number | null };
-type Work = { work_id: string; machine_id: string; token: string; task_id: string; thread: string; kind: WorkKind; text: string; state: string; claim_key: string; lease_until: number | null; created_at: number };
+type Work = { work_id: string; machine_id: string; token: string; task_id: string; thread: string; kind: WorkKind; text: string; state: string; claim_key: string; lease_until: number | null; created_at: number; files: string };
 type Status = "done" | "failed" | "needs_you" | "cancelled";
 export type Ask = { key: string; question: string; options: string[]; recommend: string };
 type Receipt = { receiptId: string; workId: string; token: string; type: "started" | "queued" | "final"; sessionId: string; status?: Status; summary?: string; ask?: Ask; notice?: { text: string; fyi: boolean }; resolve: string[] };
@@ -131,6 +132,8 @@ export class MachineStore {
     sql`CREATE TABLE IF NOT EXISTS res_machine_code (code_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)`;
     sql`CREATE TABLE IF NOT EXISTS res_machine_work (work_id TEXT PRIMARY KEY, machine_id TEXT NOT NULL, token TEXT NOT NULL, task_id TEXT NOT NULL,
       thread TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, state TEXT NOT NULL, claim_key TEXT NOT NULL, lease_until INTEGER, created_at INTEGER NOT NULL)`;
+    // Pictures and files handed along with a message (a JSON list of Attachment), a column added after the table first shipped.
+    if (!sql<{ n: number }>`SELECT COUNT(*) AS n FROM pragma_table_info('res_machine_work') WHERE name = 'files'`[0].n) sql`ALTER TABLE res_machine_work ADD COLUMN files TEXT NOT NULL DEFAULT '[]'`;
     sql`CREATE TABLE IF NOT EXISTS res_machine_receipts (receipt_id TEXT PRIMARY KEY, work_id TEXT NOT NULL, fingerprint TEXT NOT NULL)`;
     // What a thread asks them, until it is resolved: the waiting list reads these.
     sql`CREATE TABLE IF NOT EXISTS res_machine_asks (thread TEXT NOT NULL, key TEXT NOT NULL, task_id TEXT NOT NULL, question TEXT NOT NULL,
@@ -195,7 +198,7 @@ export class MachineStore {
   }
 
   /** Puts a message for a thread in line. Refused when there is no machine, or it is not online right now. */
-  enqueue(task: Task, kind: WorkKind, body: string): void {
+  enqueue(task: Task, kind: WorkKind, body: string, files: Attachment[] = []): void {
     this.atomic(() => {
       const machine = this.active();
       if (!machine) fail(409, "NO_MACHINE", "还没配机器：设置页 → 后台帮忙 → 机器");
@@ -209,7 +212,7 @@ export class MachineStore {
       this.sql`DELETE FROM res_machine_receipts WHERE work_id NOT IN (SELECT work_id FROM res_machine_work)`;
       this.sql`DELETE FROM res_machine_notes WHERE work_id NOT IN (SELECT work_id FROM res_machine_work)`;
       this.sql`INSERT INTO res_machine_work VALUES (${`w_${hex(8)}`}, ${machine!.id}, ${`wt_${hex(16)}`}, ${task.id}, ${task.root}, ${kind}, ${body},
-        ${"queued"}, ${""}, ${null}, ${Date.now()})`;
+        ${"queued"}, ${""}, ${null}, ${Date.now()}, ${JSON.stringify(files)})`;
     });
   }
 
@@ -220,13 +223,28 @@ export class MachineStore {
     return machine!;
   }
 
-  async heartbeat(token: string) {
+  /** The body is optional: the runner's plugin and what it is busy with (not kept), and the computer's name, which renames the machine. */
+  async heartbeat(token: string, input: unknown = {}) {
     const machine = await this.#machine(token);
+    const body = object(input);
+    if (Object.keys(body).some((key) => !["plugin", "busy", "label"].includes(key))) fail(400, "INVALID_HEARTBEAT", "the heartbeat has a field the protocol does not name");
+    const label = text(body.label, 60);
     return this.atomic(() => {
       this.#seen(machine);
+      if (label && label !== machine.label) this.sql`UPDATE res_machine SET label = ${label} WHERE id = ${machine.id}`;
       this.sql`UPDATE res_machine_work SET lease_until = ${Date.now() + LEASE_MS} WHERE machine_id = ${machine.id} AND state = 'claimed'`;
       return { ok: true, protocol: RUNNER_PROTOCOL };
     });
+  }
+
+  /** A file handed along with work this runner holds: its key, for the host to read from the media store. */
+  async workFile(token: string, input: unknown): Promise<{ key: string; name: string; type: string }> {
+    const machine = await this.#machine(token);
+    const body = object(input);
+    const work = typeof body.workId === "string" ? this.sql<Work>`SELECT * FROM res_machine_work WHERE work_id = ${body.workId} AND machine_id = ${machine.id}`[0] : undefined;
+    const file = (JSON.parse(work?.files ?? "[]") as Attachment[]).find((item) => item.key === body.key);
+    if (!file) fail(404, "UNKNOWN_FILE", "no such file for this work");
+    return { key: file!.key, name: file!.name, type: file!.type };
   }
 
   async poll(token: string, input: unknown) {
@@ -360,7 +378,7 @@ export class MachineStore {
 
   #shown(work: Work) {
     const title = this.tasks.get(work.task_id)?.title ?? "";
-    return { workId: work.work_id, token: work.token, thread: work.thread, kind: work.kind, title, ...(work.kind === "cancel" ? {} : { text: work.text }), ...(work.kind === "say" ? { interrupt: true } : {}) };
+    return { workId: work.work_id, token: work.token, thread: work.thread, kind: work.kind, title, ...(work.kind === "cancel" ? {} : { text: work.text }), ...(work.kind === "say" ? { interrupt: true } : {}), ...(work.files && work.files !== "[]" ? { attachments: JSON.parse(work.files) as Attachment[] } : {}) };
   }
 }
 
