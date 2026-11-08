@@ -99,7 +99,7 @@ NO_PROXY=127.0.0.1 node test/run.mjs main
 | `schema-init.mjs` | 实际表访问方法仅初始化一次，DDL 失败不误记成功，新实例重新检查 |
 | `effective-history.mjs` | 真实 Sessions 的覆盖层字节规划与有限装载：已收起原始行不再占有效预算，未覆盖内容和旧信摘要仍计入预算；每次读取只做一次元数据统计；最新一条单独超限时，普通聊天仍像 SDK 一样拿到这一条；分支超过 SDK 深度或缺父行时只拒绝写信（单独原因），普通读取退回 SDK 自己的视图 |
 | `claude-code.mjs` | Claude 订阅这条路的零件（`src/claude-code.ts` 和 `claude-box/transcript.mjs`）：消息的指纹（缓存标记、思考、文字怎么拆都不算）、盒子没见过的消息怎么送（工具调用写成一行字）、她这一轮怎么送（工具结果原样）、哪几条按盒子自己写的送回去、拒绝说成人话（没填地址、钥匙不对、盒子重启中）、不流式的调用回一整条、调工具的回复拼出参数、一整轮经过 `boxFetch`（记忆放在她的话后面、工具交过去）、一轮工具来回（停在调用处不记、结果送回去、只想起一次记一次）、盒子那边造出来的记录链得上、接不上的调用和结果改成文字、结果交给挂着的调用、工具名去掉前缀、这一轮写了什么、Claude Code 发两次请求时合成一个流、出错的一轮只报错不先说回完了、没等到盒子说「回完了」就断的算半路断了（什么都不存不记）、取消或不再读时把盒子那头也断掉（20 项） |
-| `kiro-box.mjs` | Kiro 盒子这条路（`src/kiro-box.ts` 和 `kiro-box/`），对着一个假的 kiro-cli 进程，不用真 key、不花额度：生成的 agent 字段一字不差（提示词是住户的、`tools` 明确是空列表、没有 MCP、`includeMcpJson` 关、`resources` 空）、命令行带 `--no-interactive` 和 `--trust-tools=`、不带 trust-all、在没有 `.kiro` 的空文件夹和单独的 home 里跑、机器上别的密钥传不进去；一轮进一轮出并记下 Kiro 报的 credits；没填 key 是一行说清楚、什么都不启动；key 连 kiro-cli 自己打印出来的也不会回传；Worker 这头把盒子的回答变成 Messages API 的流（流式和不流式）、不带工具、没 key 就不发请求（8 项）。命令：`node test/kiro-box.mjs` |
+| `kiro-box.mjs` | Kiro 这条路（`src/kiro-box.ts`、`src/kiro-messages.ts` 和 `acp-box/` 带 Kiro 插头），对着一个假的 `kiro-cli acp`（`test/fake-acp.cjs`），不用真 key、不花额度：生成的 agent 剥到最少（提示词是住户的、有工具时只有住户自己那一个 MCP 服务、`includeMcpJson` 关、`resources` 空）、命令行是 `acp` 且只信任 `@resident`、本机登录的测试开关默认关；第一轮带整段对话、下一轮同一个会话只发新的话、对话被压缩后丢掉旧会话重开；工具调用让回话停下、结果回给等着的调用、同一个会话接着说；key 连 kiro-cli 自己打印出来的也不会回传；Worker 这头发出带标记的消息和工具、把盒子的 tool 行变成 tool_use、没 key 就不发请求；丢掉会话时进程停、home 删掉（11 项）。命令：`node test/kiro-box.mjs` |
 | `letter-recovery-budget.mjs` | 开始写信后并发增长越界，仍能仅按元数据清理辅助问答、恢复已写好的信，普通聊天不被旧任务阻挡；已写好的信遇到超过 SDK 深度的分支时记失败并清掉任务，不无限重试 |
 
 ## 缓存历史视图回归

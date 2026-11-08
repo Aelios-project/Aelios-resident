@@ -88,7 +88,7 @@ export function webFetchTool(reader: Reader) {
         const done = cached(reader, asked);
         if (done) return render(page, done.content, done.note);
         const shrunk = await compressPage(reader.compressor, page.content, query, signal);
-        if (shrunk.content !== page.content && !signal.aborted) remember(reader, asked, { url, content: shrunk.content, note: shrunk.note });
+        if (shrunk.content !== page.content && !shrunk.failed && !signal.aborted) remember(reader, asked, { url, content: shrunk.content, note: shrunk.note });
         return render(page, shrunk.content, shrunk.note);
       } catch (error) {
         return `Could not read this page: ${error instanceof Error ? error.message : String(error)}`;

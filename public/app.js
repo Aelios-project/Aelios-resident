@@ -171,7 +171,7 @@ function resident() {
       { key: 'TAVILY_API_KEY', label: 'Tavily key', help: '自己的搜索 key，有几个填几个，按 Tavily、Brave、Perplexity 的顺序用。', more: true },
       { key: 'BRAVE_API_KEY', label: 'Brave key', more: true },
       { key: 'PERPLEXITY_API_KEY', label: 'Perplexity key', more: true },
-      { key: 'WEB_FETCH_MODEL', label: '压长网页用的模型', help: '主模型能填的 id 这里都能填。off 不压，只截断。', def: '@cf/qwen/qwen3-30b-a3b-fp8', more: true }
+      { key: 'WEB_FETCH_MODEL', label: '压长网页用的模型', help: '主模型能填的 id 这里都能填。off 不压，只截断。', def: '@cf/zai-org/glm-4.7-flash', more: true }
     ] },
     { id: 'thinking', title: '思考和交接信', hint: '聊够了门槛、又安静了一阵，它把旧聊天收进一封交接信。', fields: [
       { key: 'THINKING_EFFORT', label: 'Claude 想多久', help: 'low 最快最省，max 最久最贵。只管 Claude；换了以后第一句要重写一次缓存。', def: 'auto',
@@ -202,7 +202,7 @@ function resident() {
       ,
       { key: 'KIRO_API_KEY', label: 'Kiro API key',
         help: '模型填 kiro/auto 就用你自己的 Kiro 额度聊（只说话，不用工具，要动手的活交给线程）。在 Kiro 后台生成 API key（ksk_ 开头）填这里。还要一台装了 Kiro 盒子的机器，见 README 的 Kiro box。别发在聊天里。' },
-      { key: 'KIRO_BOX_URL', label: 'Kiro 盒子地址', help: '装了 kiro-box 的那台机器经 Cloudflare Tunnel 出来的网址。', placeholder: 'https://kiro-box.…' },
+      { key: 'KIRO_BOX_URL', label: 'Kiro 盒子地址', help: '跑着 acp-box 的那台机器经 Cloudflare Tunnel 出来的网址。', placeholder: 'https://kiro-box.…' },
       { key: 'KIRO_BOX_KEY', label: 'Kiro 盒子钥匙', help: '起盒子时设的 BOX_KEY，至少 32 位。别发在聊天里。' }
     ] },
     { id: 'push', title: '通知', fields: [

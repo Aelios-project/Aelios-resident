@@ -12,7 +12,9 @@
 //   | < THRESHOLD tokens   | extracted  | raw           |
 //   | >= THRESHOLD tokens  | extracted  | condensed     |
 //
-// Compression never fails a read: if the model errors, times out or is off, the page comes back as it was.
+// Compression never fails a read. When it is off, the page comes back as it was (web_fetch cuts it later); when the
+// model errors or times out, only a short extract of the page's text comes back, with a note, so a failed call never
+// puts a long page into the conversation.
 
 import { generateText, type LanguageModel } from "ai";
 import type { StepLike } from "../usage";
@@ -28,12 +30,19 @@ const MAX_OUTPUT_TOKENS = 1_500;
 // Two rounds of three calls at most, so a long page is done well inside web_fetch's time.
 const CALL_TIMEOUT_MS = 20_000;
 
-export const DEFAULT_COMPRESS_MODEL = "@cf/qwen/qwen3-30b-a3b-fp8";
+// Workers AI's GLM-4.7-Flash: good Chinese, 131k context, about $0.06 / $0.40 per million tokens in / out.
+// (Qwen3 30B, the default before, is retired on 2026-11-20.)
+export const DEFAULT_COMPRESS_MODEL = "@cf/zai-org/glm-4.7-flash";
+/** How much of the page's text comes back when the model could not shorten it. */
+const FALLBACK_CHARS = 4_000;
+// Thinking off where the provider takes it (Workers AI's reasoning models); others ignore it.
+const NO_THINKING = { "workers-ai": { chat_template_kwargs: { enable_thinking: false } } };
 
 /** The model that shrinks pages, and its id as it was configured. onStep is told each call's tokens (usage.ts). */
 export type Compressor = { name: string; model: LanguageModel; onStep?: (step: StepLike) => void };
 
-export type Compressed = { content: string; note?: string };
+/** `failed`: the model could not shorten it, and this is only the extract (not kept, so a later read tries again). */
+export type Compressed = { content: string; note?: string; failed?: boolean };
 
 /**
  * Rough token estimate: Latin text runs about 4 characters per token, CJK about 1,
@@ -148,6 +157,28 @@ function isNothing(text: string): boolean {
   return text.replace(/[\s.。*`"'-]/g, "") === NOTHING_RELEVANT;
 }
 
+/**
+ * The start of the page's readable text, for when the model could not shorten it: pictures dropped, links as their
+ * words, runs of blank lines and spaces folded, cut at a line end near FALLBACK_CHARS.
+ */
+export function extract(content: string, limit = FALLBACK_CHARS): string {
+  const text = content
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (text.length <= limit) return text;
+  const end = text.lastIndexOf("\n", limit);
+  return text.slice(0, end > limit / 2 ? end : limit).trimEnd();
+}
+
+function fallback(content: string, why: string): Compressed {
+  const text = extract(content);
+  return { content: text, note: `${why}, so here are the first ${text.length} characters of its text`, failed: true };
+}
+
 /** Shrink a page when the policy above says so. Always resolves. */
 export async function compressPage(
   compressor: Compressor | null,
@@ -179,13 +210,13 @@ export async function compressPage(
     });
     results.push(...(await Promise.all(batch)));
     // web_fetch gave up: stop calling the model for an answer nobody will read.
-    if (signal?.aborted) return { content, note: "could not be shortened in time, so here is the page as it is" };
+    if (signal?.aborted) return fallback(content, "the page could not be shortened in time");
   }
 
   if (results.every((result) => !result.ok)) {
     const first = results.find((result) => !result.ok);
     console.error("web_fetch: compression failed", { error: first && !first.ok ? first.error : "" });
-    return { content, note: "could not be shortened, so here is the page as it is" };
+    return fallback(content, "the page could not be shortened");
   }
   const failed = results.filter((result) => !result.ok).length;
   const kept = results
@@ -194,7 +225,7 @@ export async function compressPage(
   if (!kept.length) {
     return question
       ? { content: `Nothing on this page seems to be about: ${question}`, note: "read without a query to see the whole page" }
-      : { content, note: "could not be shortened, so here is the page as it is" };
+      : fallback(content, "the page could not be shortened");
   }
   const notes = [question ? `only the parts about: ${question}` : "a condensed version of a long page"];
   if (failed) notes.push(`${failed} of ${results.length} sections could not be read`);
@@ -213,6 +244,7 @@ async function chat(compressor: Compressor, system: string, user: string, signal
     prompt: user,
     maxOutputTokens: MAX_OUTPUT_TOKENS,
     maxRetries: 0,
+    providerOptions: NO_THINKING,
     abortSignal: stop,
     onStepEnd: compressor.onStep
   }).then((result) => result.text);
