@@ -361,7 +361,7 @@ Telegram（选装）──▶ Worker（验 secret、白名单、命令）──�
   - 本机和内网地址一律不读；每一次跳转都先检查再跟。
   - 靠 JavaScript 才显示的页面，交给 Cloudflare 的浏览器读。
   - 读过的页面留 1 小时，再问不用重抓。
-  - 长页面先用一个便宜的模型压一遍（`WEB_FETCH_MODEL`，默认 Workers AI 的 Qwen3 30B）；带了问题的，只摘相关段落。
+  - 长页面先用一个便宜的模型压一遍（`WEB_FETCH_MODEL`，默认 Workers AI 的 GLM-4.7-Flash）；带了问题的，只摘相关段落。这个模型出错时，只给页面正文开头几千字和一行说明。
   - GBK 之类的老编码也认。
 - **带钥匙的网站**：在设置页「搜网和读网页」里给某个网站存一把钥匙，思路跟云端环境的网络密钥一样：读那个网站时每个请求自动带上；模型看不到钥匙；别的网站（包括跳转去的）和 http 都拿不到。最多 10 个网站。
   - 钥匙一行一格：左边名字、右边值，不够点 ＋ 加一行。「Cloudflare 门禁」「一串 token」两个按钮一点就填好名字，只要粘值。
@@ -518,14 +518,18 @@ GitHub 那边接着做时，每次都是新开的，上一单的结果只是参�
 
 ### 用自己的 Kiro 额度（`kiro/…`）
 
-聊天也可以用你自己的 Kiro 额度：模型填 `kiro/auto`（或 `kiro/` 加 `kiro-cli chat --list-models` 里看到的任一个 id）。每一轮交给 Kiro 盒子（`kiro-box/`）：在你自己的一台机器上以 headless 模式跑 Kiro CLI，经 Cloudflare Tunnel 让住户连过去。这个模式下住户是一个个人秘书式的智能体：读消息、做决定、把活交给线程。盒子里不信任任何工具，所以 Kiro 这一轮只说话；要动手的活照旧交给线程。
+聊天也可以用你自己的 Kiro 额度：模型填 `kiro/auto`（或 `kiro/` 加 `kiro-cli chat --list-models` 里看到的任一个 id）。每一轮交给 ACP 盒子（`acp-box/`）：在你自己的一台机器上跑 `kiro-cli acp`，经 Cloudflare Tunnel 让住户连过去。这个模式下住户是一个个人秘书式的智能体：读消息、做决定、把活交给线程，用的是住户自己的工具；Kiro 自带的工具全关。
 
 - **拿 Kiro API key**：在 Kiro 后台为 headless 模式生成一个 API key（`ksk_` 开头），见 [Kiro headless 文档](https://kiro.dev/docs/cli/headless/)。
-- **起盒子**：机器上装好 [Kiro CLI](https://kiro.dev/docs/cli/)，Cloudflare Tunnel 指向它：`cd kiro-box && PORT=8791 BOX_HOST=127.0.0.1 BOX_KEY=<32 位以上随机串> node server.mjs`（Node.js 22+，不用装包）。Tunnel 的建法和 Claude 盒子一样，见 [docs/claude-box.md](docs/claude-box.md)。
+- **起盒子**：机器上装好 [Kiro CLI](https://kiro.dev/docs/cli/)，Cloudflare Tunnel 指向它：`cd acp-box && PORT=8791 BOX_HOST=127.0.0.1 BOX_KEY=<32 位以上随机串> node server.mjs`（Node.js 22+，不用装包）。Tunnel 的建法和 Claude 盒子一样，见 [docs/claude-box.md](docs/claude-box.md)。
 - **填进设置页「供应商」**：密钥 `KIRO_API_KEY`（`ksk_…`）、`KIRO_BOX_URL`（Tunnel 的网址）、密钥 `KIRO_BOX_KEY`（起盒子时的 `BOX_KEY`）。然后模型选 `kiro/auto`，填了 key 以后它会出现在建议里。key 只送到你自己的盒子，不写日志，填了就不再显示。
-- **刻意剥到最少**：盒子每一轮写一个自定义 agent，提示词是住户自己的，`tools` 明确留空，没有 MCP 服务（也不带全局 `mcp.json`），没有 resources（不加载 steering 和规则文件），用 `--trust-tools=` 启动 `kiro-cli`，在空文件夹和单独的 home 里跑。Kiro 自己的底层提示词还在下面，去不掉。
+- **住户自己的工具**：盒子用自己的 MCP 服务把它们交给 Kiro，这是 Kiro agent 里唯一的 MCP 服务，也只信任它。Kiro 调一个工具，这一段回话停下，住户去跑，同一个 Kiro 会话拿着结果接着说。
+- **刻意剥到最少**：每个 Kiro 会话用一个自定义 agent，提示词是住户自己的，没有自带工具，没有别的 MCP 服务（也不带全局 `mcp.json`），没有 resources（不加载 steering 和规则文件），在空文件夹和单独的 home 里跑，会话结束 home 就删掉。Kiro 自己的底层提示词还在下面，去不掉。
+- **一段对话一个活会话**：盒子开着时，给住户的对话留一个 Kiro 会话，每轮只发新的话。住户写交接信（或对话别的地方变了）、盒子重启、会话出错或闲置一小时，这个会话就丢掉，从住户当前的对话重新开一个。盒子上不留对话内容。
 - **花的是你的 Kiro 额度**，在模型选择器里每选一次会试调一小轮。Kiro 每轮报的额度（credits）累加存在住户的存储里（`kiro_credits`）；用量时间流里这一轮没有 token 数。
-- **限制**：住户自己的工具（小本本、闹钟、派活给线程）这个模式下不交给 Kiro，图片只留一个标记，每一轮带整段对话（超过约 10 万字符就砍掉最早的部分）。
+- **插头**：盒子不认具体帮手。`acp-box/plugs/` 里一个插头（现在只有 `kiro.mjs`）说怎么启动它的 ACP 智能体、把剥好的设置写进会话的 home、怎么读额度；换别的 ACP 帮手就是再加一个插头文件。
+- **测试开关**：`KIRO_BOX_LOCAL_LOGIN=1`（默认关）让没填 API key 的盒子用这台机器自己 `kiro-cli login` 的一份拷贝，方便在本机试。正式的盒子用 `KIRO_API_KEY`。
+- **限制**：图片只留一个标记，新会话最多带对话最新的 10 万字符。
 
 ## 设置一览
 
@@ -561,7 +565,7 @@ GitHub 那边接着做时，每次都是新开的，上一单的结果只是参�
 | `WEB_SEARCH` | `on` | `off` 关掉搜网；填 `ceramic`、`exa`、`linkup` 时，自己的 key 都失败后用 Cloudflare Web Search 的这一家 |
 | `TAVILY_API_KEY` / `BRAVE_API_KEY` / `PERPLEXITY_API_KEY` | 空 | 自己的搜索 key，按这个顺序用 |
 | `WEB_FETCH` | `on` | `off` 关掉读网页 |
-| `WEB_FETCH_MODEL` | `@cf/qwen/qwen3-30b-a3b-fp8` | 压长网页用的模型，主模型能填的 id 这里都能填；`off` 不压，只截断 |
+| `WEB_FETCH_MODEL` | `@cf/zai-org/glm-4.7-flash` | 压长网页用的模型，主模型能填的 id 这里都能填；`off` 不压，只截断 |
 | `WEB_LEARN` | `on` | 把搜到的长期知识存进 Aelios；要接着 Aelios |
 | `STICKERS` | `on` | `off` 不发表情也不画；包还留着 |
 | `VOICE_PROVIDER` | `off` | 用哪家发语音：`elevenlabs`、`cartesia`、`openrouter` |
@@ -587,7 +591,7 @@ GitHub 那边接着做时，每次都是新开的，上一单的结果只是参�
 - **默认模型** `glm-4.7-flash`：免费档能用。一万 neurons 大约够每天 80 到 200 轮（估算，看对话多长）。定时找你每次也算一轮。
 - **Claude**：接了 Aelios 时，花 Aelios 那边配的 key。没接时走 AI Gateway，花 Gateway 的预付额度；存了自己的 Anthropic key 就用那把。命中缓存的部分按缓存价算（读最多是输入价的 1/10，Opus 5.5 和 Sonnet 5.5 是 1/20）；1 小时缓存的写入是输入价的 2 倍，换来停一会儿再聊、写交接信都还能读缓存。会整段重写缓存的情况只有：超过缓存时长没说话、写完交接信后的第一句、部署了新版本或在设置页改了东西（人设、模型、开关工具等）后的第一句。每次调用读了多少缓存、写了多少、花了多少，网页门的时间流里看得到。
 - **搜网**：自己的 key 按那几家的价格算。没填时用 Cloudflare 的 Web Search，默认的 Ceramic.ai 每 1000 次 0.25 美元（10-14 查的官方价）。
-- **读网页**：普通抓取不收钱。要用浏览器的页面，Workers Paid 每月含 10 小时，超出每小时 0.09 美元（免费档每天 10 分钟）。长页压缩用的默认模型 Qwen3 30B，一页大约千分之一美元。
+- **读网页**：普通抓取不收钱。要用浏览器的页面，Workers Paid 每月含 10 小时，超出每小时 0.09 美元（免费档每天 10 分钟）。长页压缩用的默认模型 GLM-4.7-Flash，一页大约千分之一美元。
 - **语音条**：听用 Whisper，每分钟约 46.63 neurons，免费档每天大约够听 200 多分钟（10-22 查的官方价）。说按那一家自己的价格，从你的 key 扣。
 - **表情包、别的 MCP**：每轮多带一些说明；设置页上每个包、每个服务旁边写着大约多少 token。
 - **心跳、闹钟**：每次都是它的一轮。心跳趁缓存还热的时候问，跟你发一条差不多。闹钟如果在你一小时以上没说话之后才响，缓存已经凉了，整段对话要重写一遍（1 小时缓存的写入是输入价的 2 倍，读最多 1/10），这一下大约顶平时 20 多条消息的输入。所以闹钟默认关，开了也有上限。

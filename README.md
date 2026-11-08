@@ -363,7 +363,7 @@ Changing the persona, switching models, deleting or branching messages, deployin
   - Local and private-network addresses are never read, and every redirect is checked before it is followed.
   - Pages that need JavaScript to show anything are read with Cloudflare's browser.
   - A page read once is kept for 1 hour, so asking again does not fetch it again.
-  - Long pages are first condensed by a cheap model (`WEB_FETCH_MODEL`, Workers AI's Qwen3 30B by default); with a question, only the relevant passages are kept.
+  - Long pages are first condensed by a cheap model (`WEB_FETCH_MODEL`, Workers AI's GLM-4.7-Flash by default); with a question, only the relevant passages are kept. If that model fails, only the first few thousand characters of the page's text come back, with a note.
   - Old encodings such as GBK are recognised.
 - **Sites with keys** (「带钥匙的网站」): under **Search & web pages**, store a key for a site, the same idea as a cloud environment's network secrets. Every request to that site carries it automatically; the model never sees the key; other sites (including redirect targets) and plain http never get it. Up to 10 sites.
   - A key is entered as rows: a header name on the left, its value on the right; click ＋ for another row. The buttons 「Cloudflare 门禁」 (Cloudflare Access) and 「一串 token」 (a token) fill in the names for you, so you only paste the values.
@@ -520,14 +520,18 @@ The chat can run on your own Claude Pro or Max plan instead of an API key: write
 
 ### Your Kiro credits (`kiro/…`)
 
-The chat can also run on your own Kiro credits: write the model as `kiro/auto` (or `kiro/` plus any id `kiro-cli chat --list-models` shows). Each turn goes to the Kiro box (`kiro-box/`), which runs Kiro CLI in headless mode on a machine of your own behind a Cloudflare Tunnel. In this mode the resident is a personal secretary agent: it reads messages, decides, and hands work to threads. Inside the box no tool is trusted, so a Kiro turn only talks; work that needs hands goes to threads as usual.
+The chat can also run on your own Kiro credits: write the model as `kiro/auto` (or `kiro/` plus any id `kiro-cli chat --list-models` shows). Each turn goes to the ACP box (`acp-box/`), which runs `kiro-cli acp` on a machine of your own behind a Cloudflare Tunnel. In this mode the resident is a personal secretary agent: it reads messages, decides, and hands work to threads, with its own tools; Kiro's built-in tools stay off.
 
 - **Get a Kiro API key**: in the Kiro dashboard, create an API key for headless mode (it starts with `ksk_`). See [Kiro headless mode](https://kiro.dev/docs/cli/headless/).
-- **Run the box** on a machine with [Kiro CLI](https://kiro.dev/docs/cli/) installed and a Cloudflare Tunnel pointing at it: `cd kiro-box && PORT=8791 BOX_HOST=127.0.0.1 BOX_KEY=<32+ random characters> node server.mjs` (Node.js 22+, no packages to install). Tunnel steps are the same as for the Claude box in [docs/claude-box.md](docs/claude-box.md).
+- **Run the box** on a machine with [Kiro CLI](https://kiro.dev/docs/cli/) installed and a Cloudflare Tunnel pointing at it: `cd acp-box && PORT=8791 BOX_HOST=127.0.0.1 BOX_KEY=<32+ random characters> node server.mjs` (Node.js 22+, no packages to install). Tunnel steps are the same as for the Claude box in [docs/claude-box.md](docs/claude-box.md).
 - **On the settings page**, under **Providers**: the secret `KIRO_API_KEY` (the `ksk_…` key), `KIRO_BOX_URL` (the tunnel's address) and the secret `KIRO_BOX_KEY` (the `BOX_KEY` you started the box with). Then pick the model `kiro/auto`; it shows as a suggestion once the key is set. The key travels only to your own box and is never logged or shown again.
-- **Stripped down on purpose**: every turn the box writes a custom agent whose prompt is the resident's own, with an empty `tools` list, no MCP servers (the global `mcp.json` is left out), no resources (no steering or rule files), and runs `kiro-cli` with `--trust-tools=` in an empty folder with a home of its own. Kiro keeps its own base prompt underneath; that cannot be removed.
+- **The resident's tools**: the box serves them to Kiro through its own MCP server, the only one in Kiro's agent and the only one trusted. Kiro calls a tool, the reply stops, the resident runs it, and the same Kiro session goes on with the result.
+- **Stripped down on purpose**: each Kiro session gets a custom agent whose prompt is the resident's own, no built-in tools, no other MCP servers (the global `mcp.json` is left out), no resources (no steering or rule files), an empty working folder and a home of its own that is deleted with the session. Kiro keeps its own base prompt underneath; that cannot be removed.
+- **One live session per conversation**: while the box runs, it keeps one Kiro session for the resident's conversation and sends only what is new each turn. When the resident writes its handover letter (or the conversation changes otherwise), the box restarts, a session errors or sits idle for an hour, that session is dropped and a new one starts from the resident's current conversation. Nothing of the conversation is written down on the box.
 - **It uses your Kiro credits**, and each pick of the model in the picker makes one small trial turn. The credits Kiro reports for a turn are added up in the resident's storage (`kiro_credits`); the usage timeline shows the turn with no token counts.
-- **Limits**: the resident's own tools (notebook, alarms, handing work to threads) are not offered to Kiro in this mode, pictures go as a marker, and the whole conversation travels each turn (the oldest part is cut past about 100,000 characters).
+- **Plugs**: the box is helper-neutral. A plug in `acp-box/plugs/` (today only `kiro.mjs`) says how to start its ACP agent, writes its stripped setup into the session's home, and reads its credits; another ACP helper is one more plug file.
+- **Test switch**: `KIRO_BOX_LOCAL_LOGIN=1` (off by default) lets a box with no API key use a copy of the machine's own `kiro-cli login`, to try the box locally. A real box uses `KIRO_API_KEY`.
+- **Limits**: pictures go as a marker, and a new session gets at most the newest 100,000 characters of the conversation.
 
 ## All settings
 
@@ -563,7 +567,7 @@ Everything is changed on the settings page, except `WEB_KEY` (a Cloudflare secre
 | `WEB_SEARCH` | `on` | `off` turns search off; `ceramic`, `exa` or `linkup` picks which Cloudflare Web Search backend to use once your own keys have all failed |
 | `TAVILY_API_KEY` / `BRAVE_API_KEY` / `PERPLEXITY_API_KEY` | empty | Your own search keys, used in this order |
 | `WEB_FETCH` | `on` | `off` turns page reading off |
-| `WEB_FETCH_MODEL` | `@cf/qwen/qwen3-30b-a3b-fp8` | The model that condenses long pages; any id the main model accepts works; `off` only truncates |
+| `WEB_FETCH_MODEL` | `@cf/zai-org/glm-4.7-flash` | The model that condenses long pages; any id the main model accepts works; `off` only truncates |
 | `WEB_LEARN` | `on` | Saves lasting facts found by search to Aelios; needs Aelios |
 | `STICKERS` | `on` | `off` stops sending and drawing stickers; the packs are kept |
 | `VOICE_PROVIDER` | `off` | Who speaks: `elevenlabs`, `cartesia` or `openrouter` |
@@ -589,7 +593,7 @@ Everything is changed on the settings page, except `WEB_KEY` (a Cloudflare secre
 - **The default model** `glm-4.7-flash` works on the free plan. 10,000 neurons are roughly 80 to 200 turns a day (an estimate, depending on how long the conversation is). Each check-in counts as a turn.
 - **Claude**: with Aelios, it uses the key configured in Aelios. Without Aelios it goes through AI Gateway and uses the Gateway's prepaid credit, or your own Anthropic key if you stored one. Cached input is charged at the cache price (reads are a tenth of the input price or less, a twentieth on Opus 5.5 and Sonnet 5.5); writing a 1-hour cache costs twice the input price, which is what lets a pause, or a letter, still read from the cache. The whole cache is rewritten only after a silence longer than the cache lifetime, on the first message after a letter, and on the first message after a deploy or a change on the settings page (persona, model, tools turned on or off and so on). The usage timeline on the web door shows what each call read from the cache, wrote to it and cost.
 - **Search**: your own keys are charged at those services' prices. Without them, Cloudflare's Web Search is used; its default, Ceramic.ai, costs $0.25 per 1000 searches (official price checked on Oct 14).
-- **Reading pages**: ordinary fetching is free. Pages that need the browser: Workers Paid includes 10 hours a month, then $0.09 an hour (the free plan gets 10 minutes a day). Condensing a long page with the default Qwen3 30B costs about a tenth of a cent.
+- **Reading pages**: ordinary fetching is free. Pages that need the browser: Workers Paid includes 10 hours a month, then $0.09 an hour (the free plan gets 10 minutes a day). Condensing a long page with the default GLM-4.7-Flash costs about a tenth of a cent.
 - **Voice messages**: hearing uses Whisper at about 46.63 neurons a minute, so the free plan covers a little over 200 minutes a day (official price checked on Oct 22). Speaking is charged at the provider's own price, to your key.
 - **Stickers and other MCP servers**: each adds some description to every turn; the settings page shows roughly how many tokens each pack and each server costs.
 - **Heartbeats and alarms**: each is one turn of its own. A heartbeat asks while the cache is still warm, so it costs about as much as one of your messages. An alarm that rings after you have been quiet for over an hour finds the cache cold and rewrites the whole conversation (a 1-hour cache write costs twice the input price, a read a tenth or less), which is about as much input as 20-odd ordinary messages. That is why alarms are off by default and capped when on.

@@ -11,9 +11,10 @@ import { build } from "esbuild";
 // Packages stay outside the bundle and load from node_modules, so the bundle is written next to it.
 mkdirSync("node_modules/.cache", { recursive: true });
 const dir = mkdtempSync(join("node_modules/.cache", "resident-web-"));
-await build({ entryPoints: ["src/web/fetch.ts", "src/web/validate-url.ts"], bundle: true, packages: "external", platform: "node", format: "esm", outdir: dir, logLevel: "error" });
+await build({ entryPoints: ["src/web/fetch.ts", "src/web/validate-url.ts", "src/web/compress.ts"], bundle: true, packages: "external", platform: "node", format: "esm", outdir: dir, logLevel: "error" });
 const { webFetchTool } = await import(pathToFileURL(join(process.cwd(), dir, "fetch.js")).href);
 const { validateUrlWithDns } = await import(pathToFileURL(join(process.cwd(), dir, "validate-url.js")).href);
+const compress = await import(pathToFileURL(join(process.cwd(), dir, "compress.js")).href);
 rmSync(dir, { recursive: true, force: true });
 
 // --- The fake internet -----------------------------------------------------------------------------
@@ -21,6 +22,7 @@ rmSync(dir, { recursive: true, force: true });
 const PUBLIC = "93.184.216.34";
 const article = (title, text) => `<html><head><title>${title}</title></head><body><article><p>${text}</p></article></body></html>`;
 const LONG = "今天的新闻很长。".repeat(200);
+const HUGE = `${"今天的新闻很长。".repeat(20)}\n\n`.repeat(100) + "最后一段。";
 const GBK = new Uint8Array([0xc4, 0xe3, 0xba, 0xc3, 0xca, 0xc0, 0xbd, 0xe7]); // 你好世界
 let requests = [];
 
@@ -34,6 +36,7 @@ const pages = {
   "https://example.com/missing": () => new Response("nope", { status: 404 }),
   "https://example.com/photo": () => new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/png" } }),
   "https://example.com/long": () => html(article("长文", LONG)),
+  "https://example.com/huge": () => html(article("巨长", HUGE)),
   "https://example.com/gbk": () => new Response(GBK, { headers: { "content-type": "text/plain; charset=gbk" } }),
   // A site behind Cloudflare Access: with the service token's two headers the page, without them its sign-in.
   "https://gated.example/a/page": (headers) => (hasKey(headers) ? html(article("教材", "第一章的考点。".repeat(80))) : toSignIn()),
@@ -105,7 +108,7 @@ function model(answer) {
     supportedUrls: {},
     async doGenerate(options) {
       const [system, user] = options.prompt;
-      calls.push({ system: system.content, user: user.content.map((part) => part.text).join(""), signal: options.abortSignal });
+      calls.push({ system: system.content, user: user.content.map((part) => part.text).join(""), signal: options.abortSignal, providerOptions: options.providerOptions });
       if (answer instanceof Error) throw answer;
       return {
         content: [{ type: "text", text: answer }],
@@ -256,13 +259,33 @@ await step("a think block is dropped from the answer, and the call can be cancel
   assert.ok(fake.calls[0].signal instanceof AbortSignal, "the model call can be cancelled");
 });
 
-await step("when the model fails, the page comes back whole", async () => {
-  const text = await read({ compressor: shrinker(model(new Error("down"))) }, { url: "https://example.com/long", query: "新闻" });
-  assert.ok(text.includes("今天的新闻很长。今天的新闻很长。"));
-  assert.ok(text.includes("could not be shortened"));
+await step("when the model fails, only a short extract comes back, with a note, and is not kept", async () => {
+  const c = cache();
+  const down = model(new Error("down"));
+  const text = await read({ compressor: shrinker(down), cache: c }, { url: "https://example.com/huge", query: "新闻" });
+  assert.match(text, /\(the page could not be shortened, so here are the first \d+ characters of its text\)/);
+  assert.ok(text.includes("今天的新闻很长。"));
+  assert.ok(!text.includes("最后一段。"), "the rest of the page stays out");
+  assert.ok(text.length < 4300, `capped: ${text.length}`);
+  const asked = down.calls.length;
+  await read({ compressor: shrinker(down), cache: c }, { url: "https://example.com/huge", query: "新闻" });
+  assert.ok(down.calls.length > asked, "a later read asks the model again");
 });
 
-await step("when web_fetch gives up, the model call is stopped and the page comes back whole", async () => {
+await step("the extract drops pictures and link addresses and cuts at a line end", () => {
+  assert.equal(compress.extract("![x](a.png)\nSee [the docs](https://x.test/d)   now\n\n\n\nend"), "See the docs now\n\nend");
+  assert.equal(compress.extract(`${"a".repeat(30)}\n${"b".repeat(30)}`, 40), "a".repeat(30));
+});
+
+await step("the default page model is Workers AI's GLM-4.7-Flash, asked not to think", async () => {
+  assert.equal(compress.DEFAULT_COMPRESS_MODEL, "@cf/zai-org/glm-4.7-flash");
+  const fake = model("摘到的内容");
+  await read({ compressor: shrinker(fake, compress.DEFAULT_COMPRESS_MODEL) }, { url: "https://example.com/long", query: "新闻" });
+  assert.deepEqual(fake.calls[0].providerOptions?.["workers-ai"], { chat_template_kwargs: { enable_thinking: false } });
+  assert.ok(!fake.calls[0].system.includes("/no_think"));
+});
+
+await step("when web_fetch gives up, the model call is stopped and an extract of the page comes back", async () => {
   const hanging = model("never");
   hanging.doGenerate = (options) => new Promise((_, reject) => {
     hanging.calls.push({ signal: options.abortSignal });

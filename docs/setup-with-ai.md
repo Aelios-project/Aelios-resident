@@ -318,7 +318,7 @@ node -e 'process.stdout.write(JSON.stringify({text:require("fs").readFileSync(pr
 
 ### 读网页
 
-默认开着，不用 key。长网页先用一个便宜的模型压短再给它看，默认是 Workers AI 的 `@cf/qwen/qwen3-30b-a3b-fp8`，免费档的每日额度里就能用。
+默认开着，不用 key。长网页先用一个便宜的模型压短再给它看，默认是 Workers AI 的 `@cf/zai-org/glm-4.7-flash`，免费档的每日额度里就能用。压不成功时只给模型看页面开头几千字和一行说明，不会把整页塞进对话。
 
 - 一般不用改。用户想换成别的模型压（比如自己有 key 的某个便宜模型），`WEB_FETCH_MODEL` 填那个模型名，第 7 步能填的名字这里都能填；填 `off` 就不压、只截断。
 - 要它读 Cloudflare Access 挡着的网站、GitHub 私库的文件：设置页「搜网和读网页」→「带钥匙的网站」，请用户自己填，README.zh-CN.md「搜网和读网页」有步骤。

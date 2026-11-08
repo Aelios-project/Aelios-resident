@@ -810,6 +810,8 @@ export class Resident extends Think<Env> {
     const memory = aeliosConfig(this.cfg);
     return kiroModel(id, {
       key: this.cfg.KIRO_API_KEY?.trim() ?? "",
+      // The box keeps one live Kiro session for the resident's own conversation, none for work outside it.
+      ...(auxiliary ? {} : { conversation: this.residentId }),
       send: (body, signal) => this.toBox(this.cfg.KIRO_BOX_URL, this.cfg.KIRO_BOX_KEY, NO_KIRO_BOX, body, signal),
       // Kiro reports credits, not tokens: the running total is kept.
       credits: (credits) => {

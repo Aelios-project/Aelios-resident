@@ -129,7 +129,7 @@ export function promptBlocks(content: unknown): Block[] {
 }
 
 /** The resident's own tools in a request (not the provider's server tools), as the box lists them to Claude Code. */
-function ownTools(tools: unknown): Block[] {
+export function ownTools(tools: unknown): Block[] {
   if (!Array.isArray(tools)) return [];
   return tools
     .filter((tool): tool is Block => Boolean(tool) && typeof tool === "object" && (tool.type === undefined || tool.type === "custom"))
@@ -173,7 +173,7 @@ function sayings(role: string, content: unknown): unknown[] {
   return [role, out];
 }
 
-async function sha256(text: string): Promise<string> {
+export async function sha256(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

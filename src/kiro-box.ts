@@ -1,26 +1,27 @@
-// Kiro on the owner's own credits: `kiro/<model>` (kiro/auto and so on). The turn goes to the Kiro box
-// (kiro-box/server.mjs, docs in README), Kiro CLI in headless mode signed in with the owner's `KIRO_API_KEY`, on a
-// small machine of the owner's behind a Cloudflare Tunnel. Think keeps the conversation, the persona, the letters and
-// the heartbeat; only the call to the model goes to the box.
+// Kiro on the owner's own credits: `kiro/<model>` (kiro/auto and so on). The turn goes to the ACP box
+// (acp-box/server.mjs with its Kiro plug, docs in README), which runs `kiro-cli acp` signed in with the owner's
+// `KIRO_API_KEY` on a small machine of the owner's behind a Cloudflare Tunnel. Think keeps the conversation, the
+// persona, the letters and the heartbeat; only the call to the model goes to the box.
 //
-// The resident is a personal secretary agent: it reads messages, decides, and hands work to threads. Inside the box
-// no tool is trusted (no shell, no file writes, no MCP servers), so a Kiro turn only talks. Each turn carries the
-// whole conversation as text; the box keeps nothing.
-// shortcut: the resident's own tools are not offered to Kiro, and pictures go as "[picture]"; add them when Kiro's
-// headless mode can take tool definitions from the caller.
+// The box keeps one live Kiro session per conversation while it runs and sends it only what is new; the resident
+// sends the whole conversation every time (as text with marks, kiro-messages.ts), so a box that restarted, or a
+// conversation the resident compacted, starts a new session from it.
+//
+// The resident's tools go along. Kiro calls one through the box's MCP server, the reply stops there as any model's
+// does, Think runs it, and the next call brings the result, which the same Kiro session goes on from.
+// shortcut: pictures go as "[picture]"; send them when the box passes images to the helper.
 //
 // To the AI SDK this is an Anthropic model whose requests never leave the Worker but for the box: the box's NDJSON
 // is handed back as the Messages API's own stream events.
 
 import { createAnthropic } from "@ai-sdk/anthropic";
 import type { LanguageModel } from "ai";
-import { blocksOf, lines, messageOf, refusal, saidIn, sse, systemText, type Block, type Message, type StreamEvent } from "./claude-code";
-import { isNote } from "./prompts";
+import { lines, messageOf, ownTools, refusal, saidIn, sse, systemText, type Message, type StreamEvent } from "./claude-code";
+import { boxMessages, resultsIn, turnOf } from "./kiro-messages";
 
 export const KIRO_PREFIX = "kiro/";
 export const NO_KIRO_KEY = "KIRO_API_KEY is not set: create a Kiro API key (ksk_…) and put it on the settings page, Providers";
 export const NO_KIRO_BOX = "The Kiro box address is not set: install the box (README, Kiro box) and put its address and key on the settings page, Providers";
-const PROMPT_MAX = 100_000;
 
 export function isKiro(id: string): boolean {
   return id.startsWith(KIRO_PREFIX);
@@ -30,6 +31,8 @@ export function isKiro(id: string): boolean {
 export type KiroTurn = {
   /** The owner's Kiro API key. */
   key: string;
+  /** The conversation the box keeps a live session for; none for work outside it (one call, nothing kept). */
+  conversation?: string;
   /** Sends a turn to the box (POST /turn) and answers with its NDJSON stream. */
   send(body: string, signal?: AbortSignal): Promise<Response>;
   /** What long-term memory brings up for what was said ("" for nothing). */
@@ -40,23 +43,6 @@ export type KiroTurn = {
   credits?(credits: number): void;
 };
 
-/** One message as text: Kiro gets the conversation as a transcript, pictures and tool traces as short markers. */
-function textOf(message: Message): string {
-  return blocksOf(message.content)
-    .map((block: Block) => (block.type === "text" ? String(block.text ?? "") : block.type === "image" ? "[picture]" : block.type === "document" ? "[document]" : ""))
-    .filter(Boolean)
-    .join("\n");
-}
-
-/** The whole conversation as one prompt; the newest part is kept when it is too long. */
-export function transcriptOf(messages: Message[], memory = ""): string {
-  const turns = messages.map((message) => ({ who: message.role === "assistant" ? "You" : "User", text: textOf(message) })).filter((turn) => turn.text);
-  const body = turns.map((turn) => `${turn.who}: ${turn.text}`).join("\n\n");
-  const note = memory ? `\n\n${memory}` : "";
-  const head = "The conversation so far is below. Reply as You, to the User's last message, and write only the reply.\n\n";
-  return `${head}${body.length > PROMPT_MAX ? body.slice(-PROMPT_MAX) : body}${note}`;
-}
-
 /** Why the box turned a turn down, with the key taken out of whatever it said. */
 export function kiroError(message: string, key: string): string {
   const text = (key ? message.split(key).join("[key]") : message).trim() || "Kiro did not reply this turn";
@@ -65,19 +51,74 @@ export function kiroError(message: string, key: string): string {
   return `Kiro turn failed: ${text}`;
 }
 
-/** The fetch the Anthropic provider uses: every request becomes a turn in the Kiro box. */
+/** The Messages API events of a reply, built from the box's lines one at a time. */
+function replyEvents(model: string) {
+  let opened = false;
+  let index = -1;
+  let text = false;
+  let calls = 0;
+  const out: StreamEvent[] = [];
+  const open = () => {
+    if (opened) return;
+    opened = true;
+    out.push({ type: "message_start", message: { id: `kiro_${crypto.randomUUID()}`, type: "message", role: "assistant", model, content: [], usage: { input_tokens: 0, output_tokens: 0 } } });
+  };
+  const closeText = () => {
+    if (text) out.push({ type: "content_block_stop", index });
+    text = false;
+  };
+  return {
+    get opened() {
+      return opened;
+    },
+    text(piece: string) {
+      open();
+      if (!text) out.push({ type: "content_block_start", index: (index += 1), content_block: { type: "text", text: "" } });
+      text = true;
+      out.push({ type: "content_block_delta", index, delta: { type: "text_delta", text: piece } });
+    },
+    tool(use: { id?: unknown; name?: unknown; input?: unknown }) {
+      open();
+      closeText();
+      calls += 1;
+      out.push({ type: "content_block_start", index: (index += 1), content_block: { type: "tool_use", id: String(use.id), name: String(use.name), input: {} } });
+      out.push({ type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: JSON.stringify(use.input ?? {}) } });
+      out.push({ type: "content_block_stop", index });
+    },
+    end() {
+      closeText();
+      out.push({ type: "message_delta", delta: { stop_reason: calls ? "tool_use" : "end_turn" }, usage: { output_tokens: 0 } });
+      out.push({ type: "message_stop" });
+    },
+    take(): StreamEvent[] {
+      return out.splice(0);
+    }
+  };
+}
+
+/** The fetch the Anthropic provider uses: every request becomes a turn in the box. */
 export function kiroFetch(turn: KiroTurn): typeof fetch {
   return async (_input, init) => {
     if (typeof init?.body !== "string") return refusal(400, "Kiro takes conversation only");
     if (!turn.key) return refusal(401, NO_KIRO_KEY);
     const body = JSON.parse(init.body) as Record<string, unknown>;
+    const model = String(body.model ?? "");
     const messages = Array.isArray(body.messages) ? (body.messages as Message[]) : [];
-    const last = messages.at(-1);
-    if (!last || last.role !== "user") return refusal(400, "Nothing new to reply to");
-    const said = saidIn(last.content);
-    const hers = Boolean(said) && !isNote(said.trimStart());
-    const memory = hers && turn.recall ? await turn.recall(said).catch(() => "") : "";
-    const request = JSON.stringify({ key: turn.key, model: String(body.model ?? ""), system: systemText(body.system), prompt: transcriptOf(messages, memory) });
+    if (messages.at(-1)?.role !== "user") return refusal(400, "Nothing new to reply to");
+    const { said, before, hers, goesOn } = turnOf(messages);
+    // Recalled once, when the user's turn begins.
+    const note = hers && !goesOn && turn.recall ? await turn.recall(said).catch(() => "") : "";
+    const request = JSON.stringify({
+      helper: "kiro",
+      key: turn.key,
+      model,
+      system: systemText(body.system),
+      tools: ownTools(body.tools),
+      ...(turn.conversation ? { conversation: turn.conversation } : {}),
+      messages: await boxMessages(messages),
+      ...(note ? { note } : {}),
+      results: resultsIn(messages.at(-1))
+    });
     const abandon = () => {
       throw init.signal?.reason ?? new DOMException("The call was aborted", "AbortError");
     };
@@ -103,38 +144,33 @@ export function kiroFetch(turn: KiroTurn): typeof fetch {
     const stop = new AbortController();
     init.signal?.addEventListener("abort", () => stop.abort(init.signal?.reason), { once: true });
     const stream = lines(response.body, stop.signal);
-    const events: StreamEvent[] = [];
-    let opened = false;
+    const reply = replyEvents(model);
+    const all: StreamEvent[] = [];
     let finished = false;
-    let index = -1;
+    let called = false;
     /** The stream events one box line makes. */
     const take = (line: Record<string, unknown>): { events: StreamEvent[]; error?: string } => {
-      const out: StreamEvent[] = [];
-      if (typeof line.text === "string" && line.text) {
-        if (!opened) {
-          opened = true;
-          out.push({ type: "message_start", message: { id: `kiro_${crypto.randomUUID()}`, type: "message", role: "assistant", model: String(body.model ?? ""), content: [], usage: { input_tokens: 0, output_tokens: 0 } } });
-          out.push({ type: "content_block_start", index: (index = 0), content_block: { type: "text", text: "" } });
-        }
-        out.push({ type: "content_block_delta", index, delta: { type: "text_delta", text: line.text } });
+      if (typeof line.text === "string" && line.text) reply.text(line.text);
+      if (line.tool && typeof line.tool === "object") {
+        called = true;
+        reply.tool(line.tool as Record<string, unknown>);
       }
-      if (typeof line.error === "string") return { events: out, error: kiroError(line.error, turn.key) };
+      if (typeof line.error === "string") return { events: reply.take(), error: kiroError(line.error, turn.key) };
       const done = line.done as { credits?: unknown } | undefined;
       if (done) {
         finished = true;
         if (typeof done.credits === "number" && Number.isFinite(done.credits)) turn.credits?.(done.credits);
-        if (opened) {
-          out.push({ type: "content_block_stop", index });
-          out.push({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 0 } });
-          out.push({ type: "message_stop" });
-        }
+        if (reply.opened) reply.end();
       }
-      events.push(...out);
-      return { events: out };
+      const events = reply.take();
+      all.push(...events);
+      return { events };
     };
     const finish = (): void => {
-      const reply = saidIn(messageOf(events).content);
-      if (hers && turn.record && reply) turn.record(said, reply);
+      // A reply that stopped at calls is recorded once the turn has its last words.
+      if (called || !hers || !turn.record) return;
+      const text = `${before}${saidIn(messageOf(all).content)}`;
+      if (text) turn.record(said, text);
     };
     try {
       if (body.stream !== true) {
@@ -144,9 +180,9 @@ export function kiroFetch(turn: KiroTurn): typeof fetch {
           if (finished) break;
         }
         if (init.signal?.aborted) abandon();
-        if (!finished || !opened) return refusal(503, "Kiro box ended without a reply");
+        if (!finished || !reply.opened) return refusal(503, "Kiro box ended without a reply");
         finish();
-        return Response.json(messageOf(events));
+        return Response.json(messageOf(all));
       }
       // The first line decides: a turn the box turned down before saying anything is a refused call.
       const first = await stream.next();
