@@ -221,6 +221,7 @@ await test("the heartbeat renames the machine, refuses unknown fields; files rid
   await assert.rejects(f.store.heartbeat(f.token, { cwd: "/" }), code(400, "INVALID_HEARTBEAT"));
   const key = "a".repeat(32);
   const added = f.tasks.add({ title: "Synthetic", job: "look", execution: "machine", direct: true });
+  assert.throws(() => f.store.enqueue(added.task, "say", "look", Array(5).fill({ key, name: "a.txt", type: "text/plain", size: 1 })), code(400, "TOO_MANY_ATTACHMENTS"), "never more than the runner reads");
   f.store.enqueue(added.task, "say", "look", [{ key, name: "notes.pdf", type: "application/pdf", size: 10 }]);
   const { work } = await f.store.poll(f.token, { claimKey: "ck_attachments" });
   assert.deepEqual(work.attachments, [{ key, name: "notes.pdf", type: "application/pdf", size: 10 }]);

@@ -12,6 +12,8 @@ export type Loaded = { name: string; type: string; bytes: Uint8Array; kind: "pdf
 
 export const ATTACH_MAX_FILES = 3;
 export const ATTACH_MAX_PICTURES = 4;
+/** Pictures and files together in one message to a thread: the runner takes at most 4 (Aelios-desktop, packages/runner/PROTOCOL.md). */
+export const ATTACH_MAX_THREAD = 4;
 export const ATTACH_MAX_BYTES = 4 * 1024 * 1024;
 /** How much of a text file the small model reads for its summary. */
 export const TEXT_INLINE_CHARS = 30_000;
@@ -112,6 +114,7 @@ export function loadAll(pictures: unknown, files: unknown): Loaded[] | { error: 
   const docs = Array.isArray(files) ? files : [];
   if (pics.length > ATTACH_MAX_PICTURES) return { error: `一次最多 ${ATTACH_MAX_PICTURES} 张图` };
   if (docs.length > ATTACH_MAX_FILES) return { error: `一次最多 ${ATTACH_MAX_FILES} 个文件` };
+  if (pics.length + docs.length > ATTACH_MAX_THREAD) return { error: `图片和文件一次最多一共 ${ATTACH_MAX_THREAD} 个` };
   const loaded: Loaded[] = [];
   for (const [n, pic] of pics.entries()) {
     const one = loadPicture((pic ?? {}) as AttachInput, n);

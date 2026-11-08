@@ -4,7 +4,7 @@
 // running turn stops and the words go to the same session). Which helper, which folder and which permissions are the
 // machine's own settings: nothing here can choose them.
 import type { Sql } from "./sticker-store";
-import type { Attachment } from "./attachments";
+import { ATTACH_MAX_THREAD, type Attachment } from "./attachments";
 import { TASK_NOTE_PREFIX, type Task, type TaskStatus, type TaskStore } from "./cloud-tasks";
 
 export const RUNNER_PROTOCOL = "aelios-runner/1";
@@ -205,6 +205,8 @@ export class MachineStore {
 
   /** Puts a message for a thread in line. Refused when there is no machine, or it is not online right now. */
   enqueue(task: Task, kind: WorkKind, body: string, files: Attachment[] = []): void {
+    // The runner refuses a work with more attachments than this as malformed, so it is never sent.
+    if (files.length > ATTACH_MAX_THREAD) fail(400, "TOO_MANY_ATTACHMENTS", `图片和文件一次最多一共 ${ATTACH_MAX_THREAD} 个`);
     this.atomic(() => {
       const machine = this.active();
       if (!machine) fail(409, "NO_MACHINE", "还没配机器：设置页 → 后台帮忙 → 机器");

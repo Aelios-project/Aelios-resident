@@ -5,6 +5,7 @@
 var ATTACH_FILE_MAX = 4 * 1024 * 1024;
 var ATTACH_FILES = 3;
 var ATTACH_PICS = 4;
+var ATTACH_THREAD = 4; // pictures and files together in one message to a thread (the runner takes at most 4)
 var ATTACH_ACCEPT = 'image/*,.pdf,.txt,.md,.csv,.json,.xml,.yaml,.yml,.toml,.log,.html,.css,.js,.ts,.tsx,.jsx,.py,.go,.rs,.java,.c,.h,.cpp,.sh,.sql,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.odp,.rtf';
 
 function attachPage() {
@@ -37,6 +38,7 @@ function attachPage() {
       event.target.value = '';
       for (var i = 0; i < files.length; i++) {
         var file = files[i];
+        if (this.threadPics.length + this.threadDocs.length >= ATTACH_THREAD) { this.notify('图片和文件一次最多一共 ' + ATTACH_THREAD + ' 个'); break; }
         try {
           if (file.type.indexOf('image/') === 0) {
             if (this.threadPics.length >= ATTACH_PICS) { this.notify('一次最多 ' + ATTACH_PICS + ' 张图'); continue; }

@@ -46,6 +46,8 @@ await test("a thread's pictures are judged by their bytes and named by the serve
   assert.ok("error" in a.loadPicture({ data: b64("<svg/>") }, 0));
   assert.ok("error" in a.loadAll(Array(5).fill({ data: b64(png) }), []), "at most 4 pictures");
   assert.ok("error" in a.loadAll([], Array(4).fill({ name: "a.txt", data: b64("x") })), "at most 3 files");
+  assert.ok("error" in a.loadAll(Array(3).fill({ data: b64(png) }), Array(2).fill({ name: "a.txt", data: b64("x") })), "at most 4 pictures and files together");
+  assert.equal(a.loadAll(Array(2).fill({ data: b64(png) }), Array(2).fill({ name: "a.txt", data: b64("x") })).length, 4);
 });
 
 await test("a file's mark names it by key; a model that reads PDFs is told apart", () => {
