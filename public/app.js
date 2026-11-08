@@ -191,10 +191,7 @@ function resident() {
     ] },
     { id: 'custom', title: '供应商', hint: '接了 Aelios，聊天的模型和 key 在 Aelios 后台配；这里管住户自己往外发的请求。', fields: [
       { key: 'AI_GATEWAY_ID', label: 'AI Gateway 的名字', def: 'default',
-        help: '搜网、语音，和没接 Aelios 时的模型都走这个 Gateway，Provider Keys 里存的 key 也只在它里面找。留空就是 default。' },
-      { key: 'CUSTOM_BASE_URL', label: '中转地址', help: '没接 Aelios 时，模型填 custom/模型名 就走这个地址，中转、OpenRouter 都行。写到 /v1 为止。', placeholder: 'https://…/v1' },
-      { key: 'CUSTOM_API_KEY', label: '中转 key' },
-      { key: 'CUSTOM_FORMAT', label: '中转格式', def: 'openai', labels: { openai: 'OpenAI', anthropic: 'Anthropic（带缓存）' } },
+        help: '搜网和语音走这个 Gateway，Provider Keys 里存的 key 也只在它里面找。留空就是 default。聊天的模型不走这里：走 Aelios 或盒子。' },
       { key: 'CLAUDE_CODE_OAUTH_TOKEN', label: 'Claude 订阅的 setup token',
         help: '模型填 claude-code/模型名（比如 claude-code/claude-opus-5-5）就用你自己的 Claude 订阅聊，工具照常能用。在电脑上跑 claude setup-token，把出来那串填这里。还要一台装了 Claude 盒子的机器，见 docs/claude-box.md（Google Cloud 的免费小机就行）。' },
       { key: 'CLAUDE_BOX_URL', label: 'Claude 盒子地址', help: '装了 claude-box 的那台机器经 Cloudflare Tunnel 出来的网址。', placeholder: 'https://claude-box.…' },
@@ -433,7 +430,7 @@ function resident() {
     stickerLink: '',
     openPack: '',
     persona: { text: '', at: null, fallback: '', versions: [] },
-    model: { model: '', at: null, fallback: '', recent: [], lastUsage: null, memoryOff: false },
+    model: { model: '', removed: '', at: null, fallback: '', recent: [], lastUsage: null, memoryOff: false },
     catalog: [],
     catalogUpdated: '',
     // Aelios' own model list (GET /web/models), the one the picker browses while Aelios is connected.
@@ -699,7 +696,7 @@ function resident() {
       this.stickerList = [];
       this.personaLoaded = false;
       this.persona = { text: '', at: null, fallback: '', versions: [] };
-      this.model = { model: '', at: null, fallback: '', recent: [], lastUsage: null, memoryOff: false };
+      this.model = { model: '', removed: '', at: null, fallback: '', recent: [], lastUsage: null, memoryOff: false };
       this.aeliosModels = { loaded: false, items: [], curated: false, error: '' };
       this.usage = { loaded: false, busy: false, totals: null, rows: [], more: false, keepDays: 90 };
       this.config = { fields: [], voice: { hears: null, gap: 'off', keyFrom: null }, telegram: { from: null, bot: null, here: false, error: null, lastError: null },
@@ -1487,20 +1484,15 @@ function resident() {
       this.model = await this.api('/web/model');
     },
     currentModel() { return this.model.model || this.model.fallback || ''; },
-    // Violet: Workers AI. Coral: a vendor model through AI Gateway. A coral ring: your own provider (custom/…).
     dotFor(id) {
-      if (!id || id.charAt(0) === '@' || id === 'fake') return '';
-      return id.indexOf('custom/') === 0 ? 'own' : 'gateway';
+      return !id || id.charAt(0) === '@' || id === 'fake' ? '' : 'gateway';
     },
     tagFor(id) {
-      if (id === 'fake') return '测试';
-      if (this.aelios) return '从 Aelios 过';
-      return { gateway: 'Gateway 额度', own: '中转', '': 'Workers AI' }[this.dotFor(id)];
+      return id === 'fake' ? '测试' : '从 Aelios 过';
     },
     markFor(item) {
       var id = item.id || '';
       if (id.charAt(0) === '@') return 'CF';
-      if (id.indexOf('custom/') === 0) return '中';
       return (item.provider || id.split('/')[0] || '?').charAt(0).toUpperCase();
     },
     shortName(id) {
@@ -1551,8 +1543,9 @@ function resident() {
       return this.aeliosModels.items.length ? 'aelios' : 'catalog';
     },
     pickerNote() {
-      // Said out loud: half the Aelios settings filled in looks connected, and the chat quietly goes straight to the gateway.
-      if (!this.aelios) return '没连 Aelios：选的模型直接走 Cloudflare 的 AI Gateway，不经过 Aelios，也不想起、不记下旧事。要走 Aelios，设置页的 AELIOS_URL 和 AELIOS_API_KEY 两项都要填。';
+      // Said out loud: half the Aelios settings filled in looks connected, but the chat has nowhere to go.
+      if (!this.aelios) return '没连 Aelios，聊天没有模型可用：设置页的 AELIOS_URL 和 AELIOS_API_KEY 两项都要填，或者改用 Claude 盒子、Kiro 盒子。';
+      if (this.model.removed) return '之前选的 ' + this.model.removed + '（自己的供应商）已经不支持了，现在用默认模型。';
       var list = this.aeliosModels;
       if (!list.loaded) return '正在取 Aelios 的模型清单…';
       if (list.error) return 'Aelios 的模型清单没取到（' + list.error + '），先用自带的目录。';
@@ -2474,7 +2467,7 @@ function resident() {
         case 'thinking':
           return this.letterWriteStatus() + ' · ' + this.letterDeliveryCounts();
         case 'custom':
-          return 'Gateway ' + (text('AI_GATEWAY_ID') || 'default') + (text('CUSTOM_BASE_URL') ? ' · 中转 ' + host(text('CUSTOM_BASE_URL')) : '');
+          return 'Gateway ' + (text('AI_GATEWAY_ID') || 'default');
         default:
           return '';
       }

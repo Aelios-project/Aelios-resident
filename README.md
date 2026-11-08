@@ -199,10 +199,10 @@ The **WeCom** line of `/status`, and the WeCom card under Chat channels on the s
 Tap the line under its name at the top of the web door (it shows the model in use). A search box opens: the current, recent and common models are at the top, all available models below. Type `opus`, `kimi` or `qwen` to filter; a model that is not listed can be entered by its full id.
 
 - **With Aelios connected**, the list below is Aelios' own model list: the models you chose in Aelios settings → Providers → Model list (`chatgpt/…` names, custom providers and `:floor` names are all here). If Aelios has no saved list, it hands over hundreds or thousands of upstream models; those are not listed one by one, only searchable. A model that is not among this identity's main models is marked 「记不住」 ("won't remember") and dimmed, since its chats would not be remembered, and it is refused at the trial call if you pick it. If Aelios cannot be reached, the picker falls back to the built-in catalog below and says why.
-- **Without Aelios**, the list below is every text model in Cloudflare's model catalog.
+- **Without Aelios**, the picker keeps to its built-in catalog, but the chat has no model until Aelios is connected or a box is set up.
 - Before switching, it makes one trial call. If that fails (a typo, no balance, not in your plan), it keeps the current model and tells you why.
-- With no model chosen, it uses `@cf/zai-org/glm-4.7-flash`, which works on the free plan.
-- A purple dot runs on Workers AI itself, an orange dot uses AI Gateway credit, and a hollow dot goes through a relay.
+- With no model chosen, it uses `@cf/zai-org/glm-4.7-flash`, through Aelios.
+- A model saved from the removed own-provider option (`custom/…`) is ignored: the default stands, and the picker says the old choice was removed.
 - Write Claude models like `anthropic/claude-opus-5.5`. Every turn carries a cache marker, and the cache is kept for 1 hour by default (`CACHE_TTL`). Claude 5 and later think on every turn; a summary of the thinking shows under 「想了一下」. Set how long it thinks under **Thinking & letters** (「思考和交接信」).
 - With Aelios connected, every model goes through Aelios, using the keys configured there. The exception is `claude-code/…`, which runs on your own Claude subscription (see [Your Claude subscription](#your-claude-subscription-claude-code)).
 
@@ -500,13 +500,11 @@ Wherever it runs:
 
 On GitHub, a follow-up starts afresh with the earlier result as context.
 
-### Providers: your own keys and relays
+### Providers
 
-With Aelios connected, the chat's models and keys are configured in the Aelios admin; this section only covers requests the resident sends itself.
+The resident needs Aelios: its chat models and keys are set up there. The other option is a box: [`claude-code/…`](#your-claude-subscription-claude-code) or [`kiro/…`](#your-kiro-credits-kiro). There is no other route to a model, and without Aelios or a box the resident says so and does not fall back to anything.
 
-- **AI Gateway name** (`AI_GATEWAY_ID`, `default` when empty): search, voice and, without Aelios, the models all go through this Gateway, and keys are looked up only in its Provider Keys.
-- **Your own Anthropic key**: store one in this Gateway → Provider Keys with the alias `default`, and `anthropic/…` models use it instead of Cloudflare's unified billing.
-- **A relay** (OpenRouter, Nous and the like): enter the relay's address (up to `/v1`) and key, and write the model as `custom/` plus that service's own model name, such as `custom/anthropic/claude-sonnet-5.5`. It calls in OpenAI's format by default; if the service speaks Anthropic's Messages format, choose `anthropic` as the format and cache markers are sent too. This path does not go through AI Gateway, so it does not show in the Gateway's logs.
+- **AI Gateway name** (`AI_GATEWAY_ID`, `default` when empty): search and voice go through this Gateway, and keys are looked up only in its Provider Keys.
 
 ### Your Claude subscription (`claude-code/…`)
 
@@ -579,9 +577,7 @@ Everything is changed on the settings page, except `WEB_KEY` (a Cloudflare secre
 | `CLOUD_TASKS` | `off` | `on` turns on background help: jobs go to threads |
 | `CLOUD_TASK_GITHUB_TOKEN` | empty | Optional GitHub token (`repo` and `workflow`): the resident sets up a private repository and runs jobs there on GitHub Actions; can be stored as a Cloudflare secret |
 | `CLOUD_TASK_MODEL` | empty | The threads' model, on the resident and on GitHub Actions, as the model picker names it; empty uses Workers AI's `@cf/zai-org/glm-4.7-flash` |
-| `AI_GATEWAY_ID` | empty (`default`) | Which AI Gateway search, voice and, without Aelios, the models go through |
-| `CUSTOM_BASE_URL` / `CUSTOM_API_KEY` | empty | The relay's address (up to `/v1`) and key; used for `custom/…` models |
-| `CUSTOM_FORMAT` | `openai` | The relay's format: `openai` or `anthropic` (with caching) |
+| `AI_GATEWAY_ID` | empty (`default`) | Which AI Gateway search and voice go through |
 | `CLAUDE_CODE_OAUTH_TOKEN` | empty | The setup token from `claude setup-token`, for `claude-code/…` models |
 | `CLAUDE_BOX_URL` / `CLAUDE_BOX_KEY` | empty | The [Claude box](docs/claude-box.md)'s address through its Cloudflare Tunnel, and its key (at least 32 characters) |
 | `KIRO_API_KEY` / `KIRO_BOX_URL` / `KIRO_BOX_KEY` | empty | The Kiro box (see "Your Kiro credits"): your `ksk_…` Kiro API key (secret), the box's address through its Cloudflare Tunnel, and its key (secret, at least 32 characters) |
@@ -591,7 +587,7 @@ Everything is changed on the settings page, except `WEB_KEY` (a Cloudflare secre
 - **It runs on the Workers free plan.** Going over the free allowance gives errors, not charges. Durable Objects get 100,000 requests a day and Workers AI 10,000 neurons a day, reset at 00:00 UTC. An idle Durable Object sleeps and is not billed for duration. An open web door looks for news every 5 seconds, about 720 requests an hour, and stops when the page is closed or out of sight. A look reads nothing while nothing has changed; the whole conversation is read only when something has, and at least every 2 minutes, so a page left open uses little of the 5 million rows a day Durable Objects may read on the free plan.
 - **Workers Paid** ($5/month): usage is billed only beyond the included amount, which this rarely reaches.
 - **The default model** `glm-4.7-flash` works on the free plan. 10,000 neurons are roughly 80 to 200 turns a day (an estimate, depending on how long the conversation is). Each check-in counts as a turn.
-- **Claude**: with Aelios, it uses the key configured in Aelios. Without Aelios it goes through AI Gateway and uses the Gateway's prepaid credit, or your own Anthropic key if you stored one. Cached input is charged at the cache price (reads are a tenth of the input price or less, a twentieth on Opus 5.5 and Sonnet 5.5); writing a 1-hour cache costs twice the input price, which is what lets a pause, or a letter, still read from the cache. The whole cache is rewritten only after a silence longer than the cache lifetime, on the first message after a letter, and on the first message after a deploy or a change on the settings page (persona, model, tools turned on or off and so on). The usage timeline on the web door shows what each call read from the cache, wrote to it and cost.
+- **Claude**: with Aelios, it uses the key configured in Aelios. Cached input is charged at the cache price (reads are a tenth of the input price or less, a twentieth on Opus 5.5 and Sonnet 5.5); writing a 1-hour cache costs twice the input price, which is what lets a pause, or a letter, still read from the cache. The whole cache is rewritten only after a silence longer than the cache lifetime, on the first message after a letter, and on the first message after a deploy or a change on the settings page (persona, model, tools turned on or off and so on). The usage timeline on the web door shows what each call read from the cache, wrote to it and cost.
 - **Search**: your own keys are charged at those services' prices. Without them, Cloudflare's Web Search is used; its default, Ceramic.ai, costs $0.25 per 1000 searches (official price checked on Oct 14).
 - **Reading pages**: ordinary fetching is free. Pages that need the browser: Workers Paid includes 10 hours a month, then $0.09 an hour (the free plan gets 10 minutes a day). Condensing a long page with the default GLM-4.7-Flash costs about a tenth of a cent.
 - **Voice messages**: hearing uses Whisper at about 46.63 neurons a minute, so the free plan covers a little over 200 minutes a day (official price checked on Oct 22). Speaking is charged at the provider's own price, to your key.
@@ -623,12 +619,6 @@ Look at the WeCom card under **Chat channels** on the settings page, or the WeCo
 
 **Voice messages fail with 401: no key received** (`Neither authorization header nor xi-api-key received`)
 The resident looks for keys only in the Gateway named under **Providers** → **AI Gateway name** (`default` when empty). The key is probably stored in another Gateway, such as the one Aelios uses. Change the name to the Gateway that holds the key, or enter the key under **Voice**. The error and `/status` both name the Gateway it looked in.
-
-**Switching models fails with "Unified billing unavailable"**
-Cloudflare's unified billing does not sell this model, or the account has no credit. Store that provider's key in AI Gateway's Provider Keys (alias `default`), or set up a relay under **Providers**.
-
-**Switching models fails with "Unknown gateway provider"**
-Cloudflare's model catalog does not know custom providers created in AI Gateway (`custom-xxx/…`). Enter that service's relay address under **Providers** instead, and write the model as `custom/<model name>`.
 
 **No handoff letter for a long time**
 Check that both conditions hold: the chat it carries has reached the token threshold, and it has been quiet for the idle time (30000 tokens and 55 minutes by default). Continuous chatting never triggers a letter just by passing the threshold. The conversation line of `/status` shows how much it carries now. To write sooner, lower `LETTER_TOKEN_THRESHOLD` under **Thinking & letters** (whole numbers above 8000); the amount kept after a letter is fixed. `/handoff` skips the threshold, but still writes nothing when there is nothing older to fold. If `/status` says the branch is over 10,000 messages, see [Limits on writing letters](#limits-on-writing-letters).

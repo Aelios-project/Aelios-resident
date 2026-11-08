@@ -695,7 +695,7 @@ assert.equal(plain.same('', ''), false);
 console.log('PASS an id is only the same id when it is the same string');
 
 assert.equal(plain.pickerMode(), 'catalog');
-assert.match(plain.pickerNote(), /没连 Aelios.*直接走 Cloudflare 的 AI Gateway.*AELIOS_URL 和 AELIOS_API_KEY/, 'without Aelios the picker says the chat goes straight to the gateway');
+assert.match(plain.pickerNote(), /没连 Aelios.*没有模型可用.*AELIOS_URL 和 AELIOS_API_KEY.*盒子/, 'without Aelios the picker says the chat has no model');
 assert.deepEqual(titles(plain), ['正在用', '常用', 'Anthropic', 'OpenAI', 'Workers AI · Meta']);
 assert.equal(plain.entry('anthropic/claude-opus-5-5').desc, 'Opus.', 'the catalog still describes a model spelled the other way');
 assert.equal(plain.entry('anthropic/claude-opus-5-5').id, 'anthropic/claude-opus-5-5', 'and the spelling it was given is kept');

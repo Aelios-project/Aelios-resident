@@ -197,10 +197,10 @@ Telegram（选装）──▶ Worker（验 secret、白名单、命令）──�
 点网页门顶上名字下面那一行（写着正在用的模型），弹出一个搜索框：上面是正在用的、最近用过的和常用的，往下是可选的模型。输入 `opus`、`kimi`、`qwen` 就能筛；目录里没有的，直接填完整 id 也行。
 
 - **接了 Aelios 时**，往下列的是 Aelios 自己的模型清单，也就是你在 Aelios 设置 → 供应商 → 模型清单里选好的那些（`chatgpt/…`、自定义 Provider、带 `:floor` 的名字都在这里）。Aelios 没存清单时会交出上游几百上千个模型，这里不一一列出，只能搜。不在这个身份主模型里的模型会标「记不住」并调淡（聊天不会被记忆），选了也会在试调时被拦下。Aelios 取不到清单时，退回下面那份自带目录，并说明原因。
-- **没接 Aelios 时**，往下是 Cloudflare 模型目录里的全部文字模型。
+- **没接 Aelios 时**，选择器只留自带目录，聊天也没有模型可用，要先接 Aelios 或装盒子。
 - 换之前会先试调一次；调不通（写错、没额度、档位不含）就不换，并当场告诉你为什么。
-- 没选时用免费档能用的 `@cf/zai-org/glm-4.7-flash`。
-- 紫点是 Workers AI 自己跑的，橙点走 AI Gateway 的额度，空心点走中转。
+- 没选时用 `@cf/zai-org/glm-4.7-flash`，从 Aelios 过。
+- 以前存的自己的供应商模型（`custom/…`）不再支持：会用默认模型，选择器里有一行说明旧的选择已经去掉了。
 - Claude 填 `anthropic/claude-opus-5.5` 这种写法。每轮都带缓存标记，缓存默认留 1 小时（`CACHE_TTL`）。Claude 5 以后的模型每轮都会想，想的内容以摘要形式显示在「想了一下」里；想多久在设置页「思考和交接信」里调。
 - 接了 Aelios 时，选的模型都从 Aelios 过，用 Aelios 那边配好的 key。只有 `claude-code/…` 例外，它用你自己的 Claude 订阅（见[用自己的 Claude 订阅](#用自己的-claude-订阅claude-code)）。
 
@@ -498,13 +498,11 @@ GitHub 上什么都不用存：每次运行都从住户这里下载 `hands.mjs`�
 
 GitHub 那边接着做时，每次都是新开的，上一单的结果只是参考。
 
-### 供应商：用自己的 key、接中转
+### 供应商
 
-接了 Aelios 的话，聊天用的模型和 key 在 Aelios 后台配，这里只管住户自己往外发的请求。
+住户要接 Aelios：聊天用的模型和 key 在 Aelios 后台配。另一条路是盒子：[`claude-code/…`](#用自己的-claude-订阅claude-code) 或 [`kiro/…`](#用自己的-kiro-额度kiro)。模型没有别的路；没接 Aelios、也没装盒子时，住户会直接说这件事，不会退回别的地方。
 
-- **AI Gateway 的名字**（`AI_GATEWAY_ID`，留空就是 `default`）：搜网、语音，以及没接 Aelios 时的模型，都走这个 Gateway；Provider Keys 里存的 key 也只在它里面找。
-- **用自己的 Anthropic key**：在这个 Gateway → Provider Keys 里存一把，别名留 `default`，`anthropic/…` 就用这把，不走 Cloudflare 的统一计费。
-- **接中转**（OpenRouter、Nous 这类）：填中转地址（写到 `/v1` 为止）和 key，模型填 `custom/` 加那家自己的模型名，比如 `custom/anthropic/claude-sonnet-5.5`。默认按 OpenAI 的格式调；那家用 Anthropic 的 Messages 格式的话，把格式选成 `anthropic`，缓存标记照带。这条路不经过 AI Gateway，Gateway 日志里看不到。
+- **AI Gateway 的名字**（`AI_GATEWAY_ID`，留空就是 `default`）：搜网和语音走这个 Gateway；Provider Keys 里存的 key 也只在它里面找。
 
 ### 用自己的 Claude 订阅（`claude-code/…`）
 
@@ -577,9 +575,7 @@ GitHub 那边接着做时，每次都是新开的，上一单的结果只是参�
 | `CLOUD_TASKS` | `off` | `on` 打开后台帮忙：活交给线程 |
 | `CLOUD_TASK_GITHUB_TOKEN` | 空 | 选填：GitHub token（勾 `repo` 和 `workflow`），住户用它建私有仓库、在 GitHub Actions 上干活；可以存成 Cloudflare 的 Secret |
 | `CLOUD_TASK_MODEL` | 空 | 线程用的模型（住户这里和 GitHub Actions 上都是），填模型选择器里认的名字；留空用 Workers AI 的 `@cf/zai-org/glm-4.7-flash` |
-| `AI_GATEWAY_ID` | 空（用 `default`） | 搜网、语音、没接 Aelios 时的模型走哪个 AI Gateway |
-| `CUSTOM_BASE_URL` / `CUSTOM_API_KEY` | 空 | 中转的地址（写到 `/v1`）和 key；模型填 `custom/…` 时用 |
-| `CUSTOM_FORMAT` | `openai` | 中转用哪种格式：`openai` 或 `anthropic`（带缓存） |
+| `AI_GATEWAY_ID` | 空（用 `default`） | 搜网、语音走哪个 AI Gateway |
 | `CLAUDE_CODE_OAUTH_TOKEN` | 空 | `claude setup-token` 拿到的那串，给 `claude-code/…` 用 |
 | `CLAUDE_BOX_URL` / `CLAUDE_BOX_KEY` | 空 | [Claude 盒子](docs/claude-box.md)经 Cloudflare Tunnel 出来的网址，和它的钥匙（至少 32 位） |
 | `KIRO_API_KEY` / `KIRO_BOX_URL` / `KIRO_BOX_KEY` | 空 | Kiro 盒子（见「用自己的 Kiro 额度」）：你的 `ksk_…` Kiro API key（密钥）、盒子经 Cloudflare Tunnel 出来的网址、它的钥匙（密钥，至少 32 位） |
@@ -589,7 +585,7 @@ GitHub 那边接着做时，每次都是新开的，上一单的结果只是参�
 - **Workers 免费档就能跑**。超出免费额度是报错，不扣钱。Durable Object 每天 10 万次请求，Workers AI 每天 1 万 neurons，UTC 0 点重置。闲着时 Durable Object 会休眠，不算时长。网页门开着时每 5 秒问一次有没有新消息，一小时大约 720 次请求，关掉或切到后台就停。没有新东西时一行对话都不读，有变化时、以及至少每 2 分钟，才把整段对话读一遍，所以页面一直开着，也只用掉免费档每天 500 万行读取里的一小部分。
 - **Workers Paid**（5 美元/月）：超出包含额度才按量收，这个量级基本碰不到。
 - **默认模型** `glm-4.7-flash`：免费档能用。一万 neurons 大约够每天 80 到 200 轮（估算，看对话多长）。定时找你每次也算一轮。
-- **Claude**：接了 Aelios 时，花 Aelios 那边配的 key。没接时走 AI Gateway，花 Gateway 的预付额度；存了自己的 Anthropic key 就用那把。命中缓存的部分按缓存价算（读最多是输入价的 1/10，Opus 5.5 和 Sonnet 5.5 是 1/20）；1 小时缓存的写入是输入价的 2 倍，换来停一会儿再聊、写交接信都还能读缓存。会整段重写缓存的情况只有：超过缓存时长没说话、写完交接信后的第一句、部署了新版本或在设置页改了东西（人设、模型、开关工具等）后的第一句。每次调用读了多少缓存、写了多少、花了多少，网页门的时间流里看得到。
+- **Claude**：接了 Aelios 时，花 Aelios 那边配的 key。命中缓存的部分按缓存价算（读最多是输入价的 1/10，Opus 5.5 和 Sonnet 5.5 是 1/20）；1 小时缓存的写入是输入价的 2 倍，换来停一会儿再聊、写交接信都还能读缓存。会整段重写缓存的情况只有：超过缓存时长没说话、写完交接信后的第一句、部署了新版本或在设置页改了东西（人设、模型、开关工具等）后的第一句。每次调用读了多少缓存、写了多少、花了多少，网页门的时间流里看得到。
 - **搜网**：自己的 key 按那几家的价格算。没填时用 Cloudflare 的 Web Search，默认的 Ceramic.ai 每 1000 次 0.25 美元（10-14 查的官方价）。
 - **读网页**：普通抓取不收钱。要用浏览器的页面，Workers Paid 每月含 10 小时，超出每小时 0.09 美元（免费档每天 10 分钟）。长页压缩用的默认模型 GLM-4.7-Flash，一页大约千分之一美元。
 - **语音条**：听用 Whisper，每分钟约 46.63 neurons，免费档每天大约够听 200 多分钟（10-22 查的官方价）。说按那一家自己的价格，从你的 key 扣。
@@ -621,12 +617,6 @@ GitHub 那边接着做时，每次都是新开的，上一单的结果只是参�
 
 **语音发不出去，报 401，说没收到 key**（`Neither authorization header nor xi-api-key received`）
 住户只在「供应商」→「AI Gateway 的名字」那个 Gateway 里找 key，留空就是 `default`。key 多半存在别的 Gateway 里了（比如 Aelios 用的那个）。把名字改成存 key 的那个，或者直接在「语音」里填 key。报错和 `/status` 都写着它找的是哪个 Gateway。
-
-**换模型时报 Unified billing unavailable**
-这个模型 Cloudflare 的统一计费不卖，或者账户里没额度。在 AI Gateway 的 Provider Keys 里存那家的 key（别名 `default`），或者在「供应商」里填中转。
-
-**换模型时报 Unknown gateway provider**
-AI Gateway 后台建的「自定义供应商」（`custom-xxx/…`）Cloudflare 的模型目录不认。直接在「供应商」里填那家的中转地址，模型填 `custom/模型名`。
 
 **很久没写交接信**
 先看两个条件是否同时满足：当前携带的聊天达到 token 门槛，并且安静达到闲置时间（默认 30000 token 和 55 分钟）。一直在聊天不会因为过了门槛就马上写。`/status` 的「对话」一行能看到现在带着多少。想早点写，可以在「思考和交接信」调低 `LETTER_TOKEN_THRESHOLD`（只能填大于 8000 的整数）；写后保留量固定，不能调。手动 `/handoff` 可以绕过门槛，但没有旧内容可收时也不写。如果 `/status` 说分支超过 1 万条，见「写信的限制」。
