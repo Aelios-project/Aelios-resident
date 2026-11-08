@@ -1,0 +1,30 @@
+/* The threads page: the Waiting group and the thread groups share one compact row (title and status on the first line,
+   one line of summary and the time on the second, icon buttons in one row at the right). Loaded after app.css. */
+.tpage { gap: 8px; }
+.tgroup { display: flex; flex-direction: column; gap: 8px; }
+.tpage .group-title { margin: 8px 0 0; padding: 0 6px; line-height: 1.4; }
+.tgroup .group-title { margin-top: 0; }
+
+.tpage .trow { gap: 4px; padding: 10px 12px; border-radius: 14px; }
+.tpage .trow .top-line { gap: 8px; min-width: 0; }
+.tpage .trow .t { flex: 1; min-width: 0; font-size: 14.5px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tpage .trow .pill { flex: none; height: 22px; padding: 0 8px; font-size: 11.5px; }
+.tpage .trow .sub { align-items: baseline; gap: 10px; line-height: 1.45; }
+.tpage .trow .sub span:last-child { flex: none; font-variant-numeric: tabular-nums; }
+.tpage .trow .what { cursor: pointer; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.tpage .trow .what.more { -webkit-line-clamp: unset; display: block; }
+.tpage .trow .what:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* The buttons of a row: one line at the bottom right; they wrap only when there is truly no room. */
+.tpage .trow .links { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; margin: 2px -4px -4px 0; }
+.tpage .trow .links .icon-btn.sm { width: 32px; height: 32px; }
+
+/* Done threads: the name may shrink and cut off instead of pushing the status out of the row. */
+.tpage .li .name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tpage .li .val { flex: 0 1 45%; }
+
+/* What a thread on their machine is doing: its last steps, newest at the bottom, each on one line. */
+.progress { display: flex; flex-direction: column; gap: 1px; font: 12px/1.45 var(--mono); color: var(--text-3); min-width: 0; }
+.progress span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.progress span:last-child { color: var(--text-2); }
+.progress.card { padding: 10px 12px; }

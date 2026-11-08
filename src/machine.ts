@@ -4,6 +4,7 @@
 // running turn stops and the words go to the same session). Which helper, which folder and which permissions are the
 // machine's own settings: nothing here can choose them.
 import type { Sql } from "./sticker-store";
+import { progressOf, StepStore, type Step } from "./thread-steps";
 import { ATTACH_MAX_THREAD, type Attachment } from "./attachments";
 import { TASK_NOTE_PREFIX, type Task, type TaskStatus, type TaskStore } from "./cloud-tasks";
 
@@ -132,6 +133,9 @@ function receiptOf(input: unknown): Receipt {
 export type Finished = { task: Task; status: TaskStatus };
 
 export class MachineStore {
+  /** What each working thread is doing (thread-steps.ts). */
+  readonly steps: StepStore;
+
   constructor(private readonly sql: Sql, private readonly tasks: TaskStore, private readonly atomic: <T>(operation: () => T) => T) {
     sql`CREATE TABLE IF NOT EXISTS res_machine (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
       created_at INTEGER NOT NULL, last_seen_at INTEGER, revoked_at INTEGER)`;
@@ -146,6 +150,7 @@ export class MachineStore {
       options TEXT NOT NULL, recommend TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (thread, key))`;
     // What a thread told them without needing an answer (the receipt's notice), one per work.
     sql`CREATE TABLE IF NOT EXISTS res_machine_notes (work_id TEXT PRIMARY KEY, thread TEXT NOT NULL, task_id TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL)`;
+    this.steps = new StepStore(sql);
   }
 
   active(): Machine | null {
@@ -276,6 +281,25 @@ export class MachineStore {
     });
   }
 
+  /** The steps a working thread has taken so far (replaces the last list). Not a receipt: nothing is replayed, a lost one is replaced by the next. */
+  async progress(token: string, input: unknown): Promise<{ ok: true; ignored?: true }> {
+    const machine = await this.#machine(token);
+    const body = object(input);
+    const parsed = progressOf(body);
+    if (typeof parsed === "string") fail(400, "INVALID_PROGRESS", parsed);
+    const { workId, token: workToken, steps } = parsed as { workId: string; token: string; steps: Step[] };
+    if (JSON.stringify(input).includes(token)) fail(400, "INVALID_PROGRESS", "a progress never carries the runner's token");
+    return this.atomic(() => {
+      this.#seen(machine);
+      const work = this.sql<Work>`SELECT * FROM res_machine_work WHERE work_id = ${workId} AND machine_id = ${machine.id}`[0];
+      if (!work) fail(409, "UNKNOWN_WORK", "no such work for this runner");
+      if (!same(work!.token, workToken)) fail(409, "INVALID_TOKEN", "the work's token is not right");
+      if (work!.state !== "claimed") return { ok: true as const, ignored: true as const }; // it has finished: late steps are not shown
+      this.steps.set(work!.thread, steps);
+      return { ok: true as const };
+    });
+  }
+
   /** A receipt. Returns what a final one finished, so the host can keep a record. */
   async receipt(token: string, input: unknown): Promise<{ ok: true; duplicate?: true; finished?: Finished }> {
     const machine = await this.#machine(token);
@@ -307,6 +331,7 @@ export class MachineStore {
 
   #finish(work: Work, receipt: Receipt): Finished | undefined {
     this.sql`UPDATE res_machine_work SET state = ${"done"} WHERE work_id = ${work.work_id}`;
+    this.steps.clear(work.thread);
     // The lapsed-lease ask is the server's own; the runner never knows its key, so its final clears it.
     this.sql`DELETE FROM res_machine_asks WHERE thread = ${work.thread} AND key = ${`lease:${work.work_id}`}`;
     // A cancel is only the order to stop: the stopped turn takes its status from its own receipt, never from this one.

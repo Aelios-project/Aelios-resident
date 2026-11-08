@@ -244,3 +244,30 @@ await test("a failed final may carry a reason code, stored on the task; any othe
   await f.store.receipt(f.token, final(next, { status: "failed", summary: "Broke." }));
   assert.equal(f.tasks.get(again.id).reason, "", "an old runner sends none");
 });
+
+await test("progress: a working thread's last steps are kept, strictly checked, replaced each time, and gone with the final", async () => {
+  const f = await paired();
+  const task = f.add("job");
+  const { work } = await f.store.poll(f.token, { claimKey: "ck_progress1" });
+  const steps = [{ kind: "read", title: "read src/parser.js" }, { kind: "run", title: "ran npm test" }];
+  assert.deepEqual(await f.store.progress(f.token, { workId: work.workId, token: work.token, steps }), { ok: true });
+  assert.deepEqual(f.store.steps.last(task.root), steps);
+  assert.deepEqual(f.store.steps.last(task.root, 1), [steps[1]], "newest last");
+  const more = [...steps, { kind: "edit", title: "edited 2 files" }];
+  await f.store.progress(f.token, { workId: work.workId, token: work.token, steps: more });
+  assert.equal(f.store.steps.last(task.root).length, 3, "replaced, not added to");
+  const bad = (body, name) => assert.rejects(f.store.progress(f.token, { workId: work.workId, token: work.token, steps, ...body }), code(name === 409 ? 409 : 400));
+  await bad({ extra: 1 });
+  await bad({ steps: [{ kind: "sudo", title: "x" }] });
+  await bad({ steps: [{ kind: "read", title: "x".repeat(81) }] });
+  await bad({ steps: [{ kind: "read", title: "x", output: "secret" }] });
+  await bad({ steps: Array.from({ length: 11 }, () => steps[0]) });
+  await bad({ steps: [{ kind: "read", title: `leaks ${f.token}` }] });
+  await assert.rejects(f.store.progress(f.token, { workId: work.workId, token: "wt_wrong", steps }), code(409, "INVALID_TOKEN"));
+  await assert.rejects(f.store.progress("rr_" + "0".repeat(64), { workId: work.workId, token: work.token, steps }), code(401));
+  assert.equal(f.store.steps.last(task.root).length, 3, "refused ones changed nothing");
+  await f.store.receipt(f.token, final(work));
+  assert.deepEqual(f.store.steps.last(task.root), [], "the turn is over");
+  assert.deepEqual(await f.store.progress(f.token, { workId: work.workId, token: work.token, steps }), { ok: true, ignored: true });
+  assert.deepEqual(f.store.steps.last(task.root), [], "a late one is not shown");
+});

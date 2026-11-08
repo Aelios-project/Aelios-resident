@@ -32,11 +32,13 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
 </script>
 <!-- The page: app.css, markdown.js (x-markdown) and app.js; Alpine.js (MIT) lives in vendor/, so the page needs no CDN. -->
 <link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/threads.css">
 <script src="/markdown.js"></script>
 <script src="/group.js"></script>
 <script src="/machine.js"></script>
 <script src="/attach.js"></script>
 <script src="/waiting.js"></script>
+<script src="/progress.js"></script>
 <script src="/app.js"></script>
 <script defer src="/vendor/alpine-3.14.9.min.js"></script>
 </head>
@@ -713,15 +715,15 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
     <div class="who" x-show="view === 'thread'"><span class="name" x-text="thread.title || '线程'"></span><span class="hint" style="font-size: 12px" x-text="threadSub()"></span></div>
     <h1 class="title" x-show="view === 'threads'">线程</h1>
   </header>
-  <section class="page" x-show="authed && view === 'threads'">
+  <section class="page tpage" x-show="authed && view === 'threads'" x-effect="progressWatch(view)">
     <p class="status-line" x-show="threads.loaded && !threads.on">后台帮忙关着。去 设置 → 后台帮忙 打开，它才会把活交给线程。</p>
     <template x-if="waitList.items.length">
-      <div class="list" aria-label="等你的">
+      <div class="tgroup" aria-label="等你的">
         <p class="group-title">等你 <span x-text="waitList.items.length || ''"></span></p>
         <template x-for="item in waitList.items" :key="item.id">
-          <div class="trow" :class="{ ask: item.kind === 'ask' }">
+          <div class="trow" :class="{ ask: item.kind === 'ask' }" x-data="{ more: false }">
             <span class="top-line"><span class="t" x-text="item.title"></span><span class="pill" :class="item.kind === 'ask' ? 'hot' : 'bad'" x-text="waitingKind(item)"></span></span>
-            <span class="sub"><span x-text="item.line"></span><span x-text="fmt(item.at)"></span></span>
+            <span class="sub"><span class="what" :class="{ more }" role="button" tabindex="0" :aria-expanded="more" title="点开看全文" @click="more = !more" @keydown.enter.prevent="more = !more" @keydown.space.prevent="more = !more" x-text="item.line"></span><span x-text="fmt(item.at)"></span></span>
             <span class="links">
               <template x-for="(option, i) in item.options" :key="option">
                 <button class="btn small" :class="i === 0 && 'primary'" type="button" :disabled="Boolean(choosing)" @click="waitingAnswer(item, option)" x-text="option"></button>
@@ -737,6 +739,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
       <button class="trow" :class="{ working: item.status === 'sent' || item.status === 'working', ask: item.waiting }" type="button" @click="openThread(item.id)" title="打开线程">
         <span class="top-line"><span class="t" x-text="item.title"></span><span class="unread" x-show="unreadOf(item.id)" x-text="unreadOf(item.id)" aria-label="有新消息"></span><span class="pill" :class="taskPill(stateOf(item))" x-text="taskStatusText(stateOf(item), item.runs)"></span></span>
         <template x-if="item.status === 'sent' || item.status === 'working'"><span class="track" aria-hidden="true"><span></span></span></template>
+        <span class="progress" x-show="progressLines(item).length" aria-label="正在做"><template x-for="(s, i) in progressLines(item)" :key="i"><span x-text="s.title"></span></template></span>
         <span class="sub"><span x-text="runsText(item.runs) + ' · ' + item.tasks + ' 单'"></span><span x-text="fmt(item.updatedAt)"></span></span>
       </button>
     </template>
@@ -754,6 +757,9 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
     <div class="empty" x-show="threads.loaded && !threads.threads.length">还没有线程。在聊天里让它去查点什么、写点什么，它交出去的活会出现在这里。</div>
   </section>
   <section class="page" x-show="authed && view === 'thread'">
+    <div class="progress card" x-show="progressLines(thread).length" aria-live="polite" aria-label="正在做">
+      <template x-for="(s, i) in progressLines(thread)" :key="i"><span x-text="s.title"></span></template>
+    </div>
     <template x-for="line in thread.lines" :key="line.id">
       <div class="tline" :class="'r-' + line.role">
         <div class="who-l">
