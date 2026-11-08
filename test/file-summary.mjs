@@ -11,11 +11,11 @@ import { MockLanguageModelV4 } from "ai/test";
 
 mkdirSync("node_modules/.cache", { recursive: true });
 const dir = mkdtempSync(join(realpathSync("node_modules/.cache"), "file-summary-"));
-let summary, attachments, media;
+let summary, fileText, attachments, media;
 try {
-  await build({ entryPoints: ["src/file-summary.ts", "src/attachments.ts", "src/media-store.ts"], bundle: true, platform: "node", format: "esm", outdir: dir, outExtension: { ".js": ".mjs" }, logLevel: "error", external: ["ai", "zod"] });
+  await build({ entryPoints: ["src/file-summary.ts", "src/file-text.ts", "src/attachments.ts", "src/media-store.ts"], bundle: true, platform: "node", format: "esm", outdir: dir, outExtension: { ".js": ".mjs" }, logLevel: "error", external: ["ai", "zod"] });
   const load = (name) => import(pathToFileURL(join(dir, `${name}.mjs`)).href);
-  [summary, attachments, media] = await Promise.all([load("file-summary"), load("attachments"), load("media-store")]);
+  [summary, fileText, attachments, media] = await Promise.all([load("file-summary"), load("file-text"), load("attachments"), load("media-store")]);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
@@ -83,8 +83,56 @@ await test("read_attached_file: pages of the kept text by key, capped; other typ
   assert.equal(summary.readPage(m, key, 99).page, summary.MAX_PAGES);
   assert.equal(summary.readPage(m, key, 2).text, big.slice(summary.PAGE_CHARS, 2 * summary.PAGE_CHARS));
   const pdf = attachments.loadFile({ name: "p.pdf", data: b64("%PDF-1.4") });
-  assert.match(summary.readPage(m, m.put("file", pdf.type, pdf.bytes).key, 1).error, /no text/);
+  assert.match(summary.readPage(m, m.put("file", pdf.type, pdf.bytes).key, 1).error, /No text could be made/);
   assert.match(summary.readPage(m, "c".repeat(32), 1).error, /No attached file/);
   const voice = m.put("voice", "audio/wav", new Uint8Array([1, 2, 3])).key;
   assert.match(summary.readPage(m, voice, 1).error, /No attached file/, "only attached files, not other media");
+});
+
+const ai = (reply) => ({ calls: [], async toMarkdown(doc, options) { this.calls.push({ doc, options }); return typeof reply === "function" ? reply(doc) : reply; } });
+const ok = (data) => ({ id: "1", name: "x", mimeType: "application/pdf", format: "markdown", tokens: 5, data });
+
+await test("PDF and Office files become text through env.AI.toMarkdown; other types and failures give null", async () => {
+  const pdf = attachments.loadFile({ name: "p.pdf", data: b64("%PDF-1.4") });
+  const docx = attachments.loadFile({ name: "d.docx", data: Buffer.from([0x50, 0x4b, 3, 4, 1]).toString("base64") });
+  const pptx = attachments.loadFile({ name: "s.pptx", data: Buffer.from([0x50, 0x4b, 3, 4, 1]).toString("base64") });
+  const good = ai(ok("# Title\n\nBody"));
+  assert.equal(await fileText.toText(good, pdf), "# Title\n\nBody");
+  assert.equal(good.calls[0].doc.name, "p.pdf");
+  assert.equal(good.calls[0].options.conversionOptions.pdf.images.convert, false, "images in documents are not converted");
+  assert.equal(await fileText.toText(ai(ok("Word text")), docx), "Word text");
+  const never = ai(ok("x"));
+  assert.equal(await fileText.toText(never, pptx), null, "a type the service does not read is not sent");
+  assert.equal(never.calls.length, 0);
+  assert.equal(await fileText.toText(ai({ id: "1", name: "x", mimeType: "x", format: "error", error: "bad file" }), pdf), null);
+  assert.equal(await fileText.toText(ai(() => { throw new Error("down"); }), pdf), null);
+  assert.equal(await fileText.toText(undefined, pdf), null, "no AI binding");
+  assert.equal((await fileText.toText(ai(ok("y".repeat(fileText.TEXT_KEEP_CHARS + 500))), pdf)).length, fileText.TEXT_KEEP_CHARS, "kept text is capped");
+});
+
+await test("a converted PDF is summarized as text and read_attached_file pages through its text; removing the file removes the text", async () => {
+  const seen = [];
+  const pdf = attachments.loadFile({ name: "p.pdf", data: b64("%PDF-1.4") });
+  const text = "paragraph\n".repeat(5000);
+  assert.equal(await summary.summarize(aux(model("A report.", seen), "@cf/qwen/q"), pdf, text), "A report.", "a model that cannot read PDFs still summarizes the text");
+  assert.ok(JSON.stringify(seen[0]).includes("paragraph") && !JSON.stringify(seen[0]).includes("application/pdf"));
+  const m = store();
+  const { key } = m.put("file", pdf.type, pdf.bytes);
+  m.putText(key, text);
+  const page = summary.readPage(m, key, 2);
+  assert.equal(page.text, text.slice(summary.PAGE_CHARS, 2 * summary.PAGE_CHARS));
+  assert.equal(page.pages, Math.ceil(text.length / summary.PAGE_CHARS) > summary.MAX_PAGES ? summary.MAX_PAGES : Math.ceil(text.length / summary.PAGE_CHARS));
+  const textKey = m.textKeyOf(key);
+  m.remove(key);
+  assert.equal(m.get(textKey), null);
+  assert.equal(m.textKeyOf(key), null);
+});
+
+await test("when the conversion fails the file is not summarized and its key still works", async () => {
+  const pdf = attachments.loadFile({ name: "p.pdf", data: b64("%PDF-1.4") });
+  assert.equal(await summary.summarize(aux(model("x"), "@cf/qwen/q"), pdf, null), null);
+  const m = store();
+  const { key } = m.put("file", pdf.type, pdf.bytes);
+  assert.match(summary.readPage(m, key, 1).error, /No text could be made/);
+  assert.ok(summary.chatLine(pdf, key, null).text.includes("Not summarized."));
 });

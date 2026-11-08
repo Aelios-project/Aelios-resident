@@ -147,6 +147,7 @@ import { WaitingStore } from "./waiting-store";
 import { MachineError, MachineStore, machineRecord, machineReply, type Ask, type WorkKind } from "./machine";
 import { ATTACH_MARK, ATTACH_MAX_FILES, keep, loadAll, loadFile, markedFile, type Attachment } from "./attachments";
 import { chatLine, openFileTools, summarize } from "./file-summary";
+import { toText } from "./file-text";
 import { TOKEN_PAGE, dispatchHands, fingerprint, setUpHands, WORKFLOW, type HandsRepo } from "./hands-repo";
 import { fromOpenAI, toOpenAI } from "./openai-chat";
 import { SENT_STICKER, stickerMarks, withoutStickerMarks } from "./sticker-marks";
@@ -3934,10 +3935,13 @@ export class Resident extends Think<Env> {
     const bad = loaded.find((file) => "error" in file);
     if (bad && "error" in bad) return bad;
     const aux = loaded.length ? this.compressor("file") : null;
-    const summaries = await Promise.all((loaded as Exclude<(typeof loaded)[number], { error: string }>[]).map((file) => summarize(aux, file)));
-    for (const [n, file] of (loaded as Exclude<(typeof loaded)[number], { error: string }>[]).entries()) {
+    const files = loaded as Exclude<(typeof loaded)[number], { error: string }>[];
+    const texts = await Promise.all(files.map((file) => toText(this.env.AI, file)));
+    const summaries = await Promise.all(files.map((file, n) => summarize(aux, file, texts[n])));
+    for (const [n, file] of files.entries()) {
       const kept = this.media().put("file", file.type, file.bytes);
       if ("error" in kept) return kept;
+      if (texts[n]) this.media().putText(kept.key, texts[n]!);
       pictures.push(chatLine(file, kept.key, summaries[n]));
       (metadata.files ??= []).push({ name: file.name, size: file.bytes.length });
     }

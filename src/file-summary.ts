@@ -22,11 +22,14 @@ const PROMPT =
 
 const flat = (text: string) => text.replace(/[\x00-\x1f\x7f]/g, " ").replace(ATTACH_MARK, "[file ").replace(/\s+/g, " ").trim();
 
-/** A few lines about the file, or null when it cannot be read here (no small model, a type it cannot read, a failed call). Never throws. */
-export async function summarize(aux: Compressor | null, file: Loaded): Promise<string | null> {
+/**
+ * A few lines about the file, or null when it cannot be read here (no small model, a type it cannot read, a failed call).
+ * `converted` is the text made from a PDF or Office file (file-text.ts); a PDF with none goes as a file part if the model reads PDFs. Never throws.
+ */
+export async function summarize(aux: Compressor | null, file: Loaded, converted: string | null = null): Promise<string | null> {
   if (!aux) return null;
   let content: { type: "text"; text: string } | { type: "file"; data: Uint8Array; mediaType: string };
-  if (file.kind === "text") content = { type: "text", text: (file.text ?? "").slice(0, TEXT_INLINE_CHARS) };
+  if (converted || file.kind === "text") content = { type: "text", text: (converted ?? file.text ?? "").slice(0, TEXT_INLINE_CHARS) };
   else if (file.kind === "pdf" && readsPdf(aux.name)) content = { type: "file", data: file.bytes, mediaType: file.type };
   else return null;
   try {
@@ -58,8 +61,11 @@ export function readPage(media: MediaStore, key: string, page: number): { text: 
   if (media.kindOf(key) !== "file") return { error: "No attached file with this key." };
   const kept = media.get(key);
   if (!kept) return { error: "The file is gone." };
-  if (!kept.type.startsWith("text/")) return { error: "This file has no text to read here (a PDF or an office document). A thread on their machine can open it: hand it over with files=[key]." };
-  const text = new TextDecoder().decode(kept.bytes);
+  // A PDF or Office file reads through the text made from it when it was sent.
+  const textKey = kept.type.startsWith("text/") ? key : media.textKeyOf(key);
+  const source = textKey === key ? kept : textKey ? media.get(textKey) : null;
+  if (!source) return { error: "No text could be made from this file. A thread on their machine can open the original: hand it over with files=[key]." };
+  const text = new TextDecoder().decode(source.bytes);
   const pages = Math.min(MAX_PAGES, Math.max(1, Math.ceil(text.length / PAGE_CHARS)));
   const at = Math.min(Math.max(1, Math.floor(page)), pages);
   return { text: text.slice((at - 1) * PAGE_CHARS, at * PAGE_CHARS), page: at, pages };
@@ -70,7 +76,7 @@ export function openFileTools(media: () => MediaStore): ToolSet {
     read_attached_file: tool({
       description:
         "Open the original of a file they attached in the chat, by its key (key=… in the line that names it), when the summary in " +
-        "the conversation is not enough. Text and code files only; paged, 12k characters a page, 10 pages at most.",
+        "the conversation is not enough. Text and code files, and PDF/Word/Excel files through the text made when they were sent; paged, 12k characters a page, 10 pages at most.",
       inputSchema: z.object({ key: z.string(), page: z.number().int().min(1).optional().describe("Page number, from 1.") }),
       execute: async ({ key, page }) => readPage(media(), key, page ?? 1)
     })
