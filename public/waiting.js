@@ -1,5 +1,5 @@
 // The waiting list on the 线程 page (src/waiting.ts): only what needs their decision or action, in one fixed format; news (a thread
-// finished, a note) is an unread count on the thread's row instead. It is read from its own endpoint and never touches the conversation. app.js mixes this into the page's state, so no name here may be
+// finished, a note) is a dot on the thread's row instead. It is read from its own endpoint and never touches the conversation. app.js mixes this into the page's state, so no name here may be
 // one app.js already has (app.js has waiting(), the typing dots).
 function waitingPage() {
   return {
@@ -27,6 +27,10 @@ function waitingPage() {
     },
     unreadOf(threadId) {
       return (this.waitList.unread && this.waitList.unread[threadId]) || 0;
+    },
+    // A stuck item put aside: it comes back only if the thread fails again.
+    async waitingDismiss(item) {
+      try { this.waitList = await this.api('/web/waiting/seen', { method: 'POST', body: { item: item.id } }); } catch (error) { this.notify(error.message); }
     },
     // The one button on a stuck item: the settings page, or the thread (where a permission is given).
     waitingAct(item) {

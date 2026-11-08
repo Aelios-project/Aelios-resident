@@ -51,6 +51,21 @@ await test("the runner's reason code decides what a failure asks of the owner; t
   assert.deepEqual(items.map((i) => [i.thread, i.action]), [["a", "settings"]]);
 });
 
+await test("the keyword fallback wants a setting only when the words say so: not a bare 'token' or 'log in'", () => {
+  for (const said of ["The API key was rejected.", "GitHub token is missing", "invalid token", "Access token expired", "Please log in to continue", "Not logged in.",
+    "401 Unauthorized", "authentication failed", "no credentials found", "需要先登录"]) assert.equal(waiting.stuckAction(said), "settings", said);
+  for (const said of ["SyntaxError: Unexpected token } in JSON at position 4", "Token limit exceeded for this model", "Wrote the log in /tmp/out.txt",
+    "Blocked: no network from this machine"]) assert.equal(waiting.stuckAction(said), null, said);
+});
+
+await test("a stuck item put aside leaves the list; the thread failing again brings a new one", () => {
+  const failed = (at) => thread("a", { status: "failed", summary: "x", reason: "needs_login", updatedAt: at });
+  const first = waiting.build(input({ threads: [failed(now - 1000)] })).items;
+  assert.deepEqual(first.map((i) => i.kind), ["stuck"]);
+  assert.deepEqual(waiting.build(input({ threads: [failed(now - 1000)], seen: new Set([first[0].id]) })).items, [], "put aside");
+  assert.equal(waiting.build(input({ threads: [failed(now - 10)], seen: new Set([first[0].id]) })).items.length, 1, "a new failure is a new item");
+});
+
 await test("a needs_you thread without a question is not an ask; a machine thread's needs_you shows only its ask; a stopped one gives nothing", () => {
   const items = waiting.build(input({ threads: [thread("c", { runs: "linux", status: "needs_you", waiting: true, summary: "Pick one.", choices: ["X"] }),
     thread("n", { runs: "linux", status: "needs_you", waiting: true, summary: "" }), thread("s", { status: "stopped" }), thread("m", { status: "needs_you", waiting: true })] })).items;
@@ -102,4 +117,21 @@ await test("the store: an ask from a receipt is listed and pushed once; resolvin
   assert.equal(f.list.unpushed().length, 0, "a done is not pushed");
   f.list.read(task.id);
   assert.deepEqual(f.list.list().unread, {}, "opening the thread reads its news");
+});
+
+await test("the store: a stuck item can be put aside, an ask cannot be put aside this way", async () => {
+  const f = fixture();
+  const { code } = await f.machines.code();
+  const { token } = await f.machines.register({ label: "VPS", code }, false);
+  await f.machines.heartbeat(token);
+  const { task } = f.tasks.add({ title: "Job", job: "do it", execution: "machine" });
+  f.machines.enqueue(task, "job", "do it");
+  const { work } = await f.machines.poll(token, { claimKey: "ck_cccccccc" });
+  await f.machines.receipt(token, { receiptId: `${work.workId}:final`, workId: work.workId, token: work.token, type: "final", status: "failed", summary: "Not signed in.", reason: "needs_login" });
+  const [stuck] = f.list.list().items;
+  assert.equal(stuck.kind, "stuck");
+  f.list.dismiss("nothing:like:this");
+  assert.equal(f.list.list().items.length, 1, "an unknown id changes nothing");
+  f.list.dismiss(stuck.id);
+  assert.deepEqual(f.list.list().items, []);
 });

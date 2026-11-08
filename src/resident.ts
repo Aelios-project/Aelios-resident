@@ -1445,7 +1445,7 @@ export class Resident extends Think<Env> {
 
   #machineStore: MachineStore | null = null;
   private machines(): MachineStore {
-    this.#machineStore ??= new MachineStore(this.sqlShownOnWeb(), this.cloudTasks(), (operation) => this.ctx.storage.transactionSync(operation));
+    this.#machineStore ??= new MachineStore(this.sqlShownOnWeb(), this.cloudTasks(), (operation) => this.ctx.storage.transactionSync(operation), (strings, ...values) => this.sql(strings, ...(values as never[])) as never);
     return this.#machineStore;
   }
 
@@ -1483,6 +1483,7 @@ export class Resident extends Think<Env> {
   }
   webWaiting() { return this.waiting().list(); }
   webWaitingRead(thread: string | null) { this.waiting().read(thread); return this.waiting().list(); }
+  webWaitingDismiss(item: string) { this.waiting().dismiss(item); return this.waiting().list(); }
 
   /** Each new ask is pushed once, if push is on. Nothing is written into the conversation. */
   private async pushWaitingAsks(): Promise<void> {

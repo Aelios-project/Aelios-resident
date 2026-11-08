@@ -319,6 +319,7 @@ async function handleWeb(request: Request, env: Env, url: URL, at: At): Promise<
           label?: string;
           runnerId?: string;
           all?: boolean;
+          item?: string;
         })
       : {};
   switch (`${request.method} ${url.pathname}`) {
@@ -553,6 +554,8 @@ async function handleWeb(request: Request, env: Env, url: URL, at: At): Promise<
     case "GET /web/waiting":
       return Response.json(await agent.webWaiting(), { headers: { "cache-control": "no-store" } });
     case "POST /web/waiting/seen":
+      // {item}: a stuck item put aside; {id}: a thread opened, its news read; {all: true}: all news read.
+      if (typeof body.item === "string") return Response.json(await agent.webWaitingDismiss(body.item.slice(0, 200)));
       return Response.json(await agent.webWaitingRead(body.all === true ? null : String(body.id ?? "")));
     case "POST /web/thread/stop": {
       const id = String(body.id ?? "");

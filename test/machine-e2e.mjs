@@ -15,8 +15,8 @@ import path from "node:path";
 const WORKER = "http://127.0.0.1:8787";
 const KEY = "test-web-key";
 const RUNNER_REPO = "https://github.com/Aelios-project/Aelios-desktop.git";
-// Pinned to the runner with NOTE:/BLOCKED:/ASK: on the Aelios-desktop branch crew/waiting-list-spec (PR #2). A normal merge keeps this commit in main's history, so the pin stays valid.
-const RUNNER_COMMIT = "5fcab7e85032e299209b8b32c2a5b2d072253105";
+// Pinned to the runner that sends progress steps (PROTOCOL.md, progress), on Aelios-desktop main. A normal merge keeps this commit in main's history, so the pin stays valid.
+const RUNNER_COMMIT = "9e2c009dc9f834d9ac4ca18073aacb46fd4bf470";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const web = async (route, body) => {
   const response = await fetch(`${WORKER}${route}`, { method: body ? "POST" : "GET", headers: { "x-web-key": KEY, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -181,10 +181,15 @@ try {
     const slow = await send("机器派活 SLOW 慢活");
     await until(async () => (await threadOf(slow.id)).status === "working", "working");
     await until(() => prompts().some((p) => p.text === "SLOW 慢活"), "the slow turn started");
+    // The runner's progress: the thread's page and its row show what it is doing, while it works.
+    const shown = await until(async () => { const v = await threadOf(slow.id); return v.steps?.length && v; }, "steps on the thread page");
+    assert.equal(shown.steps.at(-1).title, "read look around");
+    assert.equal((await web("/web/threads")).data.threads.find((t) => t.id === slow.id).steps.at(-1).title, "read look around");
     const stop = await web("/web/thread/stop", { id: slow.id });
     assert.equal(stop.status, 200, JSON.stringify(stop.data));
     const stopped = await until(async () => { const v = await threadOf(slow.id); return v.status === "stopped" && v; }, "stopped");
     assert.deepEqual(stopped.tasks.map((task) => task.status), ["stopped"]);
+    assert.equal(stopped.steps, undefined, "no steps once it has stopped");
     assert.ok(!(await web("/web/waiting")).data.items.some((i) => i.thread === slow.id));
     assert.equal((await web("/web/thread/stop", { id: slow.id })).status, 400, "nothing running to stop");
   });

@@ -38,6 +38,12 @@ export class WaitingStore {
     for (const item of news) if (thread === null || item.thread === thread) this.sql`INSERT OR REPLACE INTO res_waiting_seen VALUES (${item.id}, ${now})`;
   }
 
+  /** The owner put a stuck item aside: it leaves the list until the thread fails again (a new failure is a new item). */
+  dismiss(id: string): void {
+    const now = Date.now();
+    if (this.#built(now).items.some((item) => item.kind === "stuck" && item.id === id)) this.sql`INSERT OR REPLACE INTO res_waiting_seen VALUES (${id}, ${now})`;
+  }
+
   /** The pushes still to send: each open ask once. */
   unpushed(): { body: string; tag: string }[] {
     const out: { body: string; tag: string }[] = [];

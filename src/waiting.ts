@@ -30,12 +30,14 @@ export type WaitingInput = {
   notes: { thread: string; task: string; key: string; text: string; at: number }[];
   /** Each thread's newest task. */
   threads: { id: string; taskId: string; title: string; status: string; runs: string; summary: string; choices: string[]; reason: string; waiting: boolean; updatedAt: number }[];
-  /** Ids of note, done and stuck items the owner has read. */
+  /** Ids of done and note items the owner has read, and of stuck items they put aside. */
   seen: ReadonlySet<string>;
   now: number;
 };
 
-const NEEDS_SETTING = /\b(api[ _-]?key|token|credential|sign[ -]?in|log[ -]?in|login|unauthori[sz]ed|authenticat\w*)\b|密钥|登录|授权|令牌/i;
+// A bare "token" or "log in" is not enough: "Unexpected token" and "the log in /tmp" are not about a setting.
+const NEEDS_SETTING =
+  /\b(api[ _-]?keys?|(?:access|auth|bearer|github|api) tokens?|(?:missing|no|invalid|expired|revoked|bad) (?:api )?(?:tokens?|credentials?)|tokens? (?:is |was |has )?(?:missing|invalid|expired|revoked|required)|credentials?|sign(?:ed)?[ -]?in|not logged in|log[ -]?in (?:to|first|again|required)|login|unauthori[sz]ed|authenticat\w*)\b|密钥|登录|授权|令牌/i;
 const NEEDS_PERMISSION = /\b(permission|not allowed|denied)\b|权限/i;
 
 /** What the runner says the owner can do for each reason it gives (machine.ts FAIL_REASONS). The others are only the thread's status. */
@@ -96,7 +98,7 @@ export function build({ asks, notes, threads, seen, now }: WaitingInput): { item
   }
   const live = [...items.values()].filter((item) => fresh(item.at));
   return {
-    items: live.filter((item) => item.kind === "ask" || item.kind === "stuck").sort((a, b) => Number(b.kind === "ask") - Number(a.kind === "ask") || b.at - a.at),
+    items: live.filter((item) => item.kind === "ask" || (item.kind === "stuck" && !seen.has(item.id))).sort((a, b) => Number(b.kind === "ask") - Number(a.kind === "ask") || b.at - a.at),
     news: live.filter((item) => (item.kind === "done" || item.kind === "note") && !seen.has(item.id))
   };
 }
