@@ -145,7 +145,8 @@ import {
 } from "./cloud-tasks";
 import { WaitingStore } from "./waiting-store";
 import { MachineError, MachineStore, machineRecord, machineReply, type Ask, type WorkKind } from "./machine";
-import { ATTACH_MARK, ATTACH_MAX_FILES, chatParts, keep, loadAll, loadFile, markedFile, readsPdf, type Attachment } from "./attachments";
+import { ATTACH_MARK, ATTACH_MAX_FILES, keep, loadAll, loadFile, markedFile, type Attachment } from "./attachments";
+import { chatLine, openFileTools, summarize } from "./file-summary";
 import { TOKEN_PAGE, dispatchHands, fingerprint, setUpHands, WORKFLOW, type HandsRepo } from "./hands-repo";
 import { fromOpenAI, toOpenAI } from "./openai-chat";
 import { SENT_STICKER, stickerMarks, withoutStickerMarks } from "./sticker-marks";
@@ -1170,7 +1171,7 @@ export class Resident extends Think<Env> {
       });
     }
     if (this.webFetchOn()) tools.web_fetch = webFetchTool(readerFor(this.cfg, this.compressor(), this.pageCache(), this.siteKeys().all()));
-    Object.assign(tools, this.stickerTools(), this.voiceTools(), this.taskTools(), this.alarmTools(), this.ownPersonaTools(), this.mcpManageTools(), this.mcpTools());
+    Object.assign(tools, openFileTools(() => this.media()), this.stickerTools(), this.voiceTools(), this.taskTools(), this.alarmTools(), this.ownPersonaTools(), this.mcpManageTools(), this.mcpTools());
     return tools;
   }
 
@@ -2591,7 +2592,7 @@ export class Resident extends Think<Env> {
    * runs on Cloudflare here; any other goes through Aelios when it is connected (marked auxiliary, so nothing is
    * recorded), else through AI Gateway. Null when it is "off" or cannot be used.
    */
-  private compressor(kind: "compress" | "learn" = "compress"): Compressor | null {
+  private compressor(kind: "compress" | "learn" | "file" = "compress"): Compressor | null {
     const name = this.cfg.WEB_FETCH_MODEL?.trim() || DEFAULT_COMPRESS_MODEL;
     const viaAelios = Boolean(aeliosConfig(this.cfg)) && !name.startsWith("@cf/");
     if (name.toLowerCase() === "off" || (!this.env.AI && !viaAelios && !isCustom(name))) return null;
@@ -3928,14 +3929,17 @@ export class Resident extends Think<Env> {
       pictures.push(part);
     }
     if ((input.files?.length ?? 0) > ATTACH_MAX_FILES) return { error: `一次最多 ${ATTACH_MAX_FILES} 个文件` };
-    const pdfOk = readsPdf(this.savedModel() || this.defaultModel);
-    for (const file of input.files ?? []) {
-      const loaded = loadFile(file ?? {});
-      if ("error" in loaded) return loaded;
-      const kept = this.media().put("file", loaded.type, loaded.bytes);
+    // Each file is kept; the small model reads it once; the conversation holds one line with the summary (file-summary.ts).
+    const loaded = (input.files ?? []).map((file) => loadFile(file ?? {}));
+    const bad = loaded.find((file) => "error" in file);
+    if (bad && "error" in bad) return bad;
+    const aux = loaded.length ? this.compressor("file") : null;
+    const summaries = await Promise.all((loaded as Exclude<(typeof loaded)[number], { error: string }>[]).map((file) => summarize(aux, file)));
+    for (const [n, file] of (loaded as Exclude<(typeof loaded)[number], { error: string }>[]).entries()) {
+      const kept = this.media().put("file", file.type, file.bytes);
       if ("error" in kept) return kept;
-      pictures.push(...chatParts(loaded, kept.key, pdfOk));
-      (metadata.files ??= []).push({ name: loaded.name, size: loaded.bytes.length });
+      pictures.push(chatLine(file, kept.key, summaries[n]));
+      (metadata.files ??= []).push({ name: file.name, size: file.bytes.length });
     }
     if (input.voice) {
       const heardIt = await this.hearWebVoice(input.voice);

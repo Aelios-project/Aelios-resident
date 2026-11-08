@@ -2064,7 +2064,7 @@ function resident() {
     },
     kindText(row) {
       var kind = { chat: '聊天', letter: '写交接信', checkin: '定时找你', heartbeat: '心跳', alarm: '闹钟', task: '线程交回', worker: '线程干活',
-        note: '系统提示', compress: '压缩网页', learn: '记下搜到的', trial: '试模型', group: '群聊' }[row.kind] || row.kind;
+        note: '系统提示', compress: '压缩网页', learn: '记下搜到的', file: '读文件', trial: '试模型', group: '群聊' }[row.kind] || row.kind;
       var via = { web: '网页', telegram: 'Telegram', wecom: '企业微信' }[row.via];
       return kind + (via ? ' · ' + via : '') + (row.step ? ' · 工具后' : '');
     },

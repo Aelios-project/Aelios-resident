@@ -1,8 +1,7 @@
-// Files and pictures the user attaches on the web page, in the chat (webSay) and in a thread (webThreadSay). The server
+// Files and pictures the user attaches on the web page, in the chat (webSay, file-summary.ts) and in a thread (webThreadSay). The server
 // decides everything: the type comes from the name's extension AND the bytes, the name is cleaned here, the size is
 // capped. Nothing a client says about a file is believed. Kept files live in the media store (media-store.ts).
 
-import type { UIMessage } from "ai";
 import type { MediaStore } from "./media-store";
 import { sniff } from "./stickers";
 
@@ -14,7 +13,7 @@ export type Loaded = { name: string; type: string; bytes: Uint8Array; kind: "pdf
 export const ATTACH_MAX_FILES = 3;
 export const ATTACH_MAX_PICTURES = 4;
 export const ATTACH_MAX_BYTES = 4 * 1024 * 1024;
-/** How much of a text file goes into the conversation itself; the rest stays in the kept copy. */
+/** How much of a text file the small model reads for its summary. */
 export const TEXT_INLINE_CHARS = 30_000;
 /** Opens every text part that carries a file, so the web page can leave it out of the message bubble. */
 export const ATTACH_MARK = "[attached file ";
@@ -127,33 +126,8 @@ export function loadAll(pictures: unknown, files: unknown): Loaded[] | { error: 
   return loaded;
 }
 
-/** Whether the chat's model takes a PDF as a file part. The gateway's big models do; Workers AI, a custom relay and the Claude box are not assumed to. */
+/** Whether a model takes a PDF as a file part. The gateway's big models do; Workers AI, a custom relay and the Claude box are not assumed to. */
 export const readsPdf = (model: string) => !/^(@cf\/|custom\/|claude-code\/|fake$)/.test(model);
-
-function base64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
-  return btoa(binary);
-}
-
-/**
- * What the model gets for a file in the chat: a text part naming it (with the key, so it can be handed to a thread),
- * plus the PDF as a file part, or the text as text, or for any other type a line saying it is kept.
- * shortcut: a PDF stays in the conversation as base64 like a picture does, up to 4 MB; trim old ones if the history gets heavy.
- */
-export function chatParts(loaded: Loaded, key: string, pdfOk: boolean): UIMessage["parts"] {
-  const head = `${ATTACH_MARK}"${loaded.name}" (${loaded.type}, ${Math.max(1, Math.round(loaded.bytes.length / 1024))} KB) key=${key}]`;
-  if (loaded.kind === "text") {
-    const text = loaded.text ?? "";
-    const cut = text.length > TEXT_INLINE_CHARS ? `${text.slice(0, TEXT_INLINE_CHARS)}\n…(cut; the whole file is kept)` : text;
-    return [{ type: "text", text: `${head}\n<<<\n${cut.replace(/<<<|>>>/g, "")}\n>>>` }];
-  }
-  if (loaded.kind === "pdf" && pdfOk) {
-    return [{ type: "text", text: head }, { type: "file", mediaType: loaded.type, filename: loaded.name, url: `data:${loaded.type};base64,${base64(loaded.bytes)}` }];
-  }
-  const why = loaded.kind === "pdf" ? "this model cannot read PDFs" : "you cannot read this type";
-  return [{ type: "text", text: `${head}\n(Kept, but ${why}. A thread on their machine can open it: hand it over with this key.)` }];
-}
 
 /** A file the user attached in the chat, found by its key in the messages' text: its name and type come from the mark written then, never from the model. */
 export function markedFile(texts: readonly string[], key: string, size: number): Attachment | null {

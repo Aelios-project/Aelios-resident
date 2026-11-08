@@ -44,8 +44,8 @@ export function refusalOf(error: unknown): string | null {
   return type ? `${status} ${type}` : String(status);
 }
 
-// Any file part: an attached PDF can be refused the same way a picture is.
-const isPicture = (part: UIMessage["parts"][number]) => part.type === "file";
+const isPicture = (part: UIMessage["parts"][number]) =>
+  part.type === "file" && typeof part.mediaType === "string" && part.mediaType.startsWith("image/");
 
 /** Whether an assistant message said or did anything: a failed turn can leave one with nothing in it. */
 function answered(message: UIMessage): boolean {

@@ -48,16 +48,11 @@ await test("a thread's pictures are judged by their bytes and named by the serve
   assert.ok("error" in a.loadAll([], Array(4).fill({ name: "a.txt", data: b64("x") })), "at most 3 files");
 });
 
-await test("chat parts: text goes in as text with its key, a PDF as a file part only when the model reads PDFs", () => {
+await test("a file's mark names it by key; a model that reads PDFs is told apart", () => {
   const key = "c".repeat(32);
-  const text = a.loadFile({ name: "n.md", data: b64("hello") });
-  const [part] = a.chatParts(text, key, true);
-  assert.ok(part.text.startsWith(a.ATTACH_MARK) && part.text.includes("hello") && part.text.includes(`key=${key}`));
-  assert.equal(a.markedFile([part.text], key, 5).name, "n.md");
-  assert.equal(a.markedFile([part.text], "d".repeat(32), 5), null);
-  const pdf = a.loadFile({ name: "p.pdf", data: b64("%PDF-1.4") });
-  assert.equal(a.chatParts(pdf, key, true).length, 2);
-  assert.equal(a.chatParts(pdf, key, false).length, 1);
+  const mark = `${a.ATTACH_MARK}"n.md" (text/plain, 1 KB) key=${key}]\nSummary: x`;
+  assert.equal(a.markedFile([mark], key, 5).name, "n.md");
+  assert.equal(a.markedFile([mark], "d".repeat(32), 5), null);
   assert.equal(a.readsPdf("@cf/zai-org/glm-4.7-flash"), false);
   assert.equal(a.readsPdf("anthropic/claude-sonnet-4-5"), true);
 });
