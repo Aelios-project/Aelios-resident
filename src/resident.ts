@@ -3934,26 +3934,33 @@ export class Resident extends Think<Env> {
     const loaded = (input.files ?? []).map((file) => loadFile(file ?? {}));
     const bad = loaded.find((file) => "error" in file);
     if (bad && "error" in bad) return bad;
+    // Check the sticker and keep the voice before the slow file reading, so a refusal costs nothing and nothing is left behind.
+    const sticker = input.sticker ? this.stickers().byKey(String(input.sticker)) : null;
+    if (input.sticker && !sticker) return { error: "这张表情包不在开着的包里了" };
+    const stored: string[] = [];
+    if (input.voice) {
+      const heardIt = await this.hearWebVoice(input.voice);
+      if ("error" in heardIt) return heardIt;
+      stored.push(heardIt.key);
+      said = said ? `${said}\n${heardIt.line}` : heardIt.line;
+      metadata.voice = { key: heardIt.key, seconds: heardIt.seconds };
+    }
     const aux = loaded.length ? this.compressor("file") : null;
     const files = loaded as Exclude<(typeof loaded)[number], { error: string }>[];
     const texts = await Promise.all(files.map((file) => toText(this.env.AI, file)));
     const summaries = await Promise.all(files.map((file, n) => summarize(aux, file, texts[n])));
     for (const [n, file] of files.entries()) {
       const kept = this.media().put("file", file.type, file.bytes);
-      if ("error" in kept) return kept;
+      if ("error" in kept) {
+        for (const key of stored) this.media().remove(key);
+        return kept;
+      }
+      stored.push(kept.key);
       if (texts[n]) this.media().putText(kept.key, texts[n]!);
       pictures.push(chatLine(file, kept.key, summaries[n]));
       (metadata.files ??= []).push({ name: file.name, size: file.bytes.length });
     }
-    if (input.voice) {
-      const heardIt = await this.hearWebVoice(input.voice);
-      if ("error" in heardIt) return heardIt;
-      said = said ? `${said}\n${heardIt.line}` : heardIt.line;
-      metadata.voice = { key: heardIt.key, seconds: heardIt.seconds };
-    }
-    if (input.sticker) {
-      const sticker = this.stickers().byKey(String(input.sticker));
-      if (!sticker) return { error: "这张表情包不在开着的包里了" };
+    if (sticker) {
       const what = [sticker.emoji, sticker.when || sticker.handle.split("/")[1]].filter(Boolean).join(" ");
       said = `${said}${said ? "\n" : ""}[sticker ${what.replace(/\]/g, "］")}]`;
       metadata.sticker = String(input.sticker);

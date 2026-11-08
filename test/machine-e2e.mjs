@@ -116,6 +116,19 @@ try {
     assert.ok(JSON.parse(readFileSync(store, "utf8")).log.some((e) => e.event === "session/cancel"));
   });
 
+  await step("a file sent into a thread shows as its name in her line, never its content, and is refused without a name or bytes", async () => {
+    const data = Buffer.from("secret body").toString("base64");
+    const own = await send("机器派活 带文件");
+    await until(async () => (await threadOf(own.id)).status === "done", "done");
+    const said = await web("/web/thread/say", { id: own.id, text: "看这个", files: [{ name: "notes.txt", data }] });
+    assert.equal(said.status, 200, JSON.stringify(said.data));
+    const line = said.data.lines.findLast((l) => l.role === "user");
+    assert.equal(line.text, "看这个\n\n[attached: notes.txt]");
+    assert.ok(!JSON.stringify(said.data).includes("secret body"));
+    assert.equal((await web("/web/thread/say", { id: own.id, text: "x", files: [{ name: "a.txt", data: "" }] })).status, 400);
+    await until(async () => (await threadOf(own.id)).status === "done", "done again");
+  });
+
   await step("an ASK: line makes the thread wait for her with its question kept; her answer resolves it", async () => {
     const t = await send("机器派活 ASKME 选哪个");
     const asked = await until(async () => { const v = await threadOf(t.id); return v.status === "needs_you" && v; }, "needs_you");
