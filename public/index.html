@@ -705,18 +705,18 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
   <section class="page" x-show="authed && view === 'threads'">
     <p class="status-line" x-show="threads.loaded && !threads.on">后台帮忙关着。去 设置 → 后台帮忙 打开，它才会把活交给线程。</p>
     <template x-if="waitList.items.length">
-      <div class="list" aria-label="等你的和新消息">
-        <p class="group-title">等你 <span x-text="waitList.open || ''"></span></p>
+      <div class="list" aria-label="等你的">
+        <p class="group-title">等你 <span x-text="waitList.items.length || ''"></span></p>
         <template x-for="item in waitList.items" :key="item.id">
-          <div class="trow" :class="{ ask: item.kind === 'ask' && !item.expired }" style="opacity: 1" :style="item.expired && 'opacity: .55'">
-            <span class="top-line"><span class="t" x-text="item.title"></span><span class="pill" :class="{ hot: item.kind === 'ask' && !item.expired, bad: item.kind === 'stuck', ok: item.kind === 'done' }" x-text="waitingKind(item)"></span></span>
+          <div class="trow" :class="{ ask: item.kind === 'ask' }">
+            <span class="top-line"><span class="t" x-text="item.title"></span><span class="pill" :class="item.kind === 'ask' ? 'hot' : 'bad'" x-text="waitingKind(item)"></span></span>
             <span class="sub"><span x-text="item.line"></span><span x-text="fmt(item.at)"></span></span>
             <span class="links">
               <template x-for="(option, i) in item.options" :key="option">
                 <button class="btn small" :class="i === 0 && 'primary'" type="button" :disabled="Boolean(choosing)" @click="waitingAnswer(item, option)" x-text="option"></button>
               </template>
-              <button class="icon-btn sm" type="button" @click="waitingOpen(item)" title="打开线程" aria-label="打开线程"><i class="i i-open" aria-hidden="true"></i></button>
-              <button class="icon-btn sm" type="button" x-show="item.kind !== 'ask'" @click="waitingRead(item)" title="已读" aria-label="已读"><i class="i i-x" aria-hidden="true"></i></button>
+              <button class="btn small" type="button" x-show="item.kind === 'stuck' && !item.options.length" @click="waitingAct(item)" x-text="item.action === 'settings' ? '去设置' : '打开线程'"></button>
+              <button class="icon-btn sm" type="button" @click="openThread(item.thread)" title="打开线程" aria-label="打开线程"><i class="i i-open" aria-hidden="true"></i></button>
             </span>
           </div>
         </template>
@@ -724,7 +724,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
     </template>
     <template x-for="item in threadsIn('open')" :key="item.id">
       <button class="trow" :class="{ working: item.status === 'sent' || item.status === 'working', ask: item.waiting }" type="button" @click="openThread(item.id)" title="打开线程">
-        <span class="top-line"><span class="t" x-text="item.title"></span><span class="pill" :class="taskPill(stateOf(item))" x-text="taskStatusText(stateOf(item), item.runs)"></span></span>
+        <span class="top-line"><span class="t" x-text="item.title"></span><span class="unread" x-show="unreadOf(item.id)" x-text="unreadOf(item.id)" aria-label="有新消息"></span><span class="pill" :class="taskPill(stateOf(item))" x-text="taskStatusText(stateOf(item), item.runs)"></span></span>
         <template x-if="item.status === 'sent' || item.status === 'working'"><span class="track" aria-hidden="true"><span></span></span></template>
         <span class="sub"><span x-text="runsText(item.runs) + ' · ' + item.tasks + ' 单'"></span><span x-text="fmt(item.updatedAt)"></span></span>
       </button>
@@ -735,6 +735,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
         <button class="li" type="button" @click="openThread(item.id)" title="打开线程">
           <span class="pill" :class="taskPill(stateOf(item))" style="height: 8px; width: 8px; padding: 0; background: currentColor" aria-hidden="true"></span>
           <span class="name" x-text="item.title"></span>
+          <span class="unread" x-show="unreadOf(item.id)" x-text="unreadOf(item.id)" aria-label="有新消息"></span>
           <span class="val" x-text="taskStatusText(stateOf(item), item.runs) + ' · ' + fmt(item.updatedAt)"></span>
         </button>
       </template>

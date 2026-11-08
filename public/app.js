@@ -1873,6 +1873,7 @@ function resident() {
         this.closeFile();
       }
       this.view = 'thread';
+      this.waitingRead(id);
       await this.loadThread(id);
     },
     async loadThread(id) {
