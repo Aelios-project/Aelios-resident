@@ -41,6 +41,7 @@ import { z } from "zod";
 import { aeliosConfig, fetchBoot, ingest, memoryTools, pin, recall, type AeliosConfig } from "./aelios";
 import { quietAfterTools } from "./after-tools";
 import { claudeCodeModel, isClaudeCode, NO_BOX, type Segment } from "./claude-code";
+import { isKiro, kiroModel, NO_KIRO_BOX } from "./kiro-box";
 import { cacheTtlMs, markedForLetter, opensWindow } from "./cache-window";
 import { historyAnchor, historyCutoff, historyForWindow } from "./cache-history";
 import { EffectiveHistoryError, installEffectiveHistory } from "./effective-history";
@@ -753,6 +754,7 @@ export class Resident extends Think<Env> {
     const thinking: Thinking | undefined = asked ? { effort: effortOf(this.cfg.THINKING_EFFORT) } : undefined;
     // Claude on her own subscription goes to the Claude box, with or without Aelios (claude-code.ts).
     if (isClaudeCode(id)) return this.claudeCode(id, { auxiliary, thinking });
+    if (isKiro(id)) return this.kiro(id, auxiliary);
     const memory = aeliosConfig(this.cfg);
     if (!memory) return this.modelFor(id, thinking);
     // What Aelios did about memory on her turn, kept so the web page and /status can say when it is off.
@@ -775,18 +777,7 @@ export class Resident extends Think<Env> {
         token: this.cfg.CLAUDE_CODE_OAUTH_TOKEN?.trim() ?? "",
         send: (body, signal) => this.toClaudeBox(body, signal),
         ...(auxiliary ? {} : { segments: { load: () => this.claudeCodeHeld(), save: (segments) => this.holdClaudeCode(segments) } }),
-        ...(memory && !auxiliary
-          ? {
-              recall: (said) => this.recallFor(memory, said),
-              record: (said, reply) => {
-                this.ctx.waitUntil(
-                  ingest(memory, [{ role: "user", content: said }, { role: "assistant", content: reply }], "aelios-resident").then((kept) =>
-                    this.ctx.storage.put("aelios_memory", { status: kept ? "on" : "off", model: id, at: Date.now() })
-                  )
-                );
-              }
-            }
-          : {})
+        ...(memory && !auxiliary ? this.memoryHooks(memory, id) : {})
       },
       thinking
     );
@@ -797,12 +788,49 @@ export class Resident extends Think<Env> {
    * connection to the box closes, and the box stops the turn.
    */
   private toClaudeBox(body: string, signal?: AbortSignal): Promise<Response> {
-    const at = this.cfg.CLAUDE_BOX_URL?.trim().replace(/\/+$/, "");
-    if (!at) return Promise.resolve(Response.json({ error: NO_BOX }, { status: 501 }));
+    return this.toBox(this.cfg.CLAUDE_BOX_URL, this.cfg.CLAUDE_BOX_KEY, NO_BOX, body, signal);
+  }
+
+  /** Recall before a turn and record after it, for models that do not pass through Aelios themselves. */
+  private memoryHooks(memory: AeliosConfig, id: string) {
+    return {
+      recall: (said: string) => this.recallFor(memory, said),
+      record: (said: string, reply: string) => {
+        this.ctx.waitUntil(
+          ingest(memory, [{ role: "user", content: said }, { role: "assistant", content: reply }], "aelios-resident").then((kept) =>
+            this.ctx.storage.put("aelios_memory", { status: kept ? "on" : "off", model: id, at: Date.now() })
+          )
+        );
+      }
+    };
+  }
+
+  /** `kiro/<model>`: the turn goes to the Kiro box, signed in with the owner's Kiro API key (kiro-box.ts). */
+  private kiro(id: string, auxiliary: boolean): ThinkModel {
+    const memory = aeliosConfig(this.cfg);
+    return kiroModel(id, {
+      key: this.cfg.KIRO_API_KEY?.trim() ?? "",
+      send: (body, signal) => this.toBox(this.cfg.KIRO_BOX_URL, this.cfg.KIRO_BOX_KEY, NO_KIRO_BOX, body, signal),
+      // Kiro reports credits, not tokens: the running total is kept.
+      credits: (credits) => {
+        this.ctx.waitUntil(
+          this.ctx.storage
+            .get<{ total: number }>("kiro_credits")
+            .then((held) => this.ctx.storage.put("kiro_credits", { total: (held?.total ?? 0) + credits, last: credits, at: Date.now() }))
+        );
+      },
+      ...(memory && !auxiliary ? this.memoryHooks(memory, id) : {})
+    });
+  }
+
+  /** A turn to a box at the address on the settings page, with its key. Aborted, the box stops the turn. */
+  private toBox(url: string | undefined, boxKey: string | undefined, missing: string, body: string, signal?: AbortSignal): Promise<Response> {
+    const at = url?.trim().replace(/\/+$/, "");
+    if (!at) return Promise.resolve(Response.json({ error: missing }, { status: 501 }));
     // The settings page checks it too; this also covers an address set as a Worker variable.
     const unsafe = boxAddress(at);
     if (unsafe) return Promise.resolve(Response.json({ error: unsafe }, { status: 501 }));
-    const key = this.cfg.CLAUDE_BOX_KEY?.trim();
+    const key = boxKey?.trim();
     const headers: Record<string, string> = { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) };
     // A redirect is not followed: it would take the token, the key and the conversation to another address.
     return fetch(`${at}/turn`, { method: "POST", headers, body, signal, redirect: "manual" });
@@ -858,6 +886,7 @@ export class Resident extends Think<Env> {
     if (isCustom(id)) return customModel(this.cfg, id, thinking);
     // Called here only for work outside the conversation (the conversation's own model is chatModel's).
     if (isClaudeCode(id)) return this.claudeCode(id, { auxiliary: true, thinking });
+    if (isKiro(id)) return this.kiro(id, true);
     return id === "fake" && this.env.FAKE_MODEL === "true" ? fakeModel() : id;
   }
 
@@ -4471,7 +4500,8 @@ export class Resident extends Think<Env> {
       model: saved?.value ?? "",
       at: saved?.at ?? null,
       fallback: this.defaultModel,
-      recent: this.recentModels(),
+      // kiro/auto is offered as a suggestion once the Kiro API key is set.
+      recent: this.cfg.KIRO_API_KEY?.trim() && !this.recentModels().includes("kiro/auto") ? [...this.recentModels(), "kiro/auto"] : this.recentModels(),
       lastUsage: await this.lastUsage(),
       memoryOff: await this.memoryOff()
     };

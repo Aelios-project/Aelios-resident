@@ -67,6 +67,10 @@ export const FIELDS: readonly Field[] = [
   // The Claude box on a machine of her own (claude-box/, docs/claude-box.md) and the key it checks.
   { key: "CLAUDE_BOX_URL", kind: "text", check: boxAddress },
   { key: "CLAUDE_BOX_KEY", kind: "secret", check: (value) => (value.length >= 32 ? null : "盒子钥匙至少 32 位，用装盒子时生成的那把") },
+  // The Kiro box (kiro-box/): the owner's Kiro API key, the box's address, and the key it checks.
+  { key: "KIRO_API_KEY", kind: "secret", check: (value) => (/^ksk_[A-Za-z0-9_-]{16,}$/.test(value) ? null : "A Kiro API key starts with ksk_ (made in the Kiro dashboard)") },
+  { key: "KIRO_BOX_URL", kind: "text", check: boxAddress },
+  { key: "KIRO_BOX_KEY", kind: "secret", check: (value) => (value.length >= 32 ? null : "The box key must be at least 32 characters") },
   { key: "AI_GATEWAY_ID", kind: "text" },
   { key: "AELIOS_URL", kind: "text", check: address },
   { key: "AELIOS_API_KEY", kind: "secret" },

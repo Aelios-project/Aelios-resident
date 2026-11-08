@@ -130,7 +130,7 @@ export function loadAll(pictures: unknown, files: unknown): Loaded[] | { error: 
 }
 
 /** Whether a model takes a PDF as a file part. The gateway's big models do; Workers AI, a custom relay and the Claude box are not assumed to. */
-export const readsPdf = (model: string) => !/^(@cf\/|custom\/|claude-code\/|fake$)/.test(model);
+export const readsPdf = (model: string) => !/^(@cf\/|custom\/|claude-code\/|kiro\/|fake$)/.test(model);
 
 /** A file the user attached in the chat, found by its key in the messages' text: its name and type come from the mark written then, never from the model. */
 export function markedFile(texts: readonly string[], key: string, size: number): Attachment | null {

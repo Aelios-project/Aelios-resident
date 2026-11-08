@@ -516,6 +516,17 @@ GitHub 那边接着做时，每次都是新开的，上一单的结果只是参�
 - **盒子里什么都不存**：每一轮都带上整段对话；盒子回过的话，按 Claude Code 自己记的样子送回去（存在 Durable Object 里），所以每一轮都接得上提示缓存，盒子重启过也接着聊。
 - 这是你自己的订阅、你自己的账号：一串 setup token 只给一个人自己的住户用。
 
+### 用自己的 Kiro 额度（`kiro/…`）
+
+聊天也可以用你自己的 Kiro 额度：模型填 `kiro/auto`（或 `kiro/` 加 `kiro-cli chat --list-models` 里看到的任一个 id）。每一轮交给 Kiro 盒子（`kiro-box/`）：在你自己的一台机器上以 headless 模式跑 Kiro CLI，经 Cloudflare Tunnel 让住户连过去。这个模式下住户是一个个人秘书式的智能体：读消息、做决定、把活交给线程。盒子里不信任任何工具，所以 Kiro 这一轮只说话；要动手的活照旧交给线程。
+
+- **拿 Kiro API key**：在 Kiro 后台为 headless 模式生成一个 API key（`ksk_` 开头），见 [Kiro headless 文档](https://kiro.dev/docs/cli/headless/)。
+- **起盒子**：机器上装好 [Kiro CLI](https://kiro.dev/docs/cli/)，Cloudflare Tunnel 指向它：`cd kiro-box && PORT=8791 BOX_HOST=127.0.0.1 BOX_KEY=<32 位以上随机串> node server.mjs`（Node.js 22+，不用装包）。Tunnel 的建法和 Claude 盒子一样，见 [docs/claude-box.md](docs/claude-box.md)。
+- **填进设置页「供应商」**：密钥 `KIRO_API_KEY`（`ksk_…`）、`KIRO_BOX_URL`（Tunnel 的网址）、密钥 `KIRO_BOX_KEY`（起盒子时的 `BOX_KEY`）。然后模型选 `kiro/auto`，填了 key 以后它会出现在建议里。key 只送到你自己的盒子，不写日志，填了就不再显示。
+- **刻意剥到最少**：盒子每一轮写一个自定义 agent，提示词是住户自己的，`tools` 明确留空，没有 MCP 服务（也不带全局 `mcp.json`），没有 resources（不加载 steering 和规则文件），用 `--trust-tools=` 启动 `kiro-cli`，在空文件夹和单独的 home 里跑。Kiro 自己的底层提示词还在下面，去不掉。
+- **花的是你的 Kiro 额度**，在模型选择器里每选一次会试调一小轮。Kiro 每轮报的额度（credits）累加存在住户的存储里（`kiro_credits`）；用量时间流里这一轮没有 token 数。
+- **限制**：住户自己的工具（小本本、闹钟、派活给线程）这个模式下不交给 Kiro，图片只留一个标记，每一轮带整段对话（超过约 10 万字符就砍掉最早的部分）。
+
 ## 设置一览
 
 都在网页设置页里改。不在设置页的只有 `WEB_KEY`（Cloudflare 的 Secret），和 `TG_BOT_USERNAME`、`DEBOUNCE_SECONDS`（要改就在 Cloudflare 里填）。
@@ -567,6 +578,7 @@ GitHub 那边接着做时，每次都是新开的，上一单的结果只是参�
 | `CUSTOM_FORMAT` | `openai` | 中转用哪种格式：`openai` 或 `anthropic`（带缓存） |
 | `CLAUDE_CODE_OAUTH_TOKEN` | 空 | `claude setup-token` 拿到的那串，给 `claude-code/…` 用 |
 | `CLAUDE_BOX_URL` / `CLAUDE_BOX_KEY` | 空 | [Claude 盒子](docs/claude-box.md)经 Cloudflare Tunnel 出来的网址，和它的钥匙（至少 32 位） |
+| `KIRO_API_KEY` / `KIRO_BOX_URL` / `KIRO_BOX_KEY` | 空 | Kiro 盒子（见「用自己的 Kiro 额度」）：你的 `ksk_…` Kiro API key（密钥）、盒子经 Cloudflare Tunnel 出来的网址、它的钥匙（密钥，至少 32 位） |
 
 ## 花钱吗
 

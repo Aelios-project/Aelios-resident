@@ -518,6 +518,17 @@ The chat can run on your own Claude Pro or Max plan instead of an API key: write
 - **The box keeps nothing**: each turn carries the whole conversation; what the box answered before goes back as Claude Code's own record of it, kept in the Durable Object, so the prompt cache keeps hitting from turn to turn, and a box that restarted carries on.
 - It is your plan and your account: one setup token is for one person's own resident.
 
+### Your Kiro credits (`kiro/…`)
+
+The chat can also run on your own Kiro credits: write the model as `kiro/auto` (or `kiro/` plus any id `kiro-cli chat --list-models` shows). Each turn goes to the Kiro box (`kiro-box/`), which runs Kiro CLI in headless mode on a machine of your own behind a Cloudflare Tunnel. In this mode the resident is a personal secretary agent: it reads messages, decides, and hands work to threads. Inside the box no tool is trusted, so a Kiro turn only talks; work that needs hands goes to threads as usual.
+
+- **Get a Kiro API key**: in the Kiro dashboard, create an API key for headless mode (it starts with `ksk_`). See [Kiro headless mode](https://kiro.dev/docs/cli/headless/).
+- **Run the box** on a machine with [Kiro CLI](https://kiro.dev/docs/cli/) installed and a Cloudflare Tunnel pointing at it: `cd kiro-box && PORT=8791 BOX_HOST=127.0.0.1 BOX_KEY=<32+ random characters> node server.mjs` (Node.js 22+, no packages to install). Tunnel steps are the same as for the Claude box in [docs/claude-box.md](docs/claude-box.md).
+- **On the settings page**, under **Providers**: the secret `KIRO_API_KEY` (the `ksk_…` key), `KIRO_BOX_URL` (the tunnel's address) and the secret `KIRO_BOX_KEY` (the `BOX_KEY` you started the box with). Then pick the model `kiro/auto`; it shows as a suggestion once the key is set. The key travels only to your own box and is never logged or shown again.
+- **Stripped down on purpose**: every turn the box writes a custom agent whose prompt is the resident's own, with an empty `tools` list, no MCP servers (the global `mcp.json` is left out), no resources (no steering or rule files), and runs `kiro-cli` with `--trust-tools=` in an empty folder with a home of its own. Kiro keeps its own base prompt underneath; that cannot be removed.
+- **It uses your Kiro credits**, and each pick of the model in the picker makes one small trial turn. The credits Kiro reports for a turn are added up in the resident's storage (`kiro_credits`); the usage timeline shows the turn with no token counts.
+- **Limits**: the resident's own tools (notebook, alarms, handing work to threads) are not offered to Kiro in this mode, pictures go as a marker, and the whole conversation travels each turn (the oldest part is cut past about 100,000 characters).
+
 ## All settings
 
 Everything is changed on the settings page, except `WEB_KEY` (a Cloudflare secret) and `TG_BOT_USERNAME` and `DEBOUNCE_SECONDS`, which are set in Cloudflare if at all.
@@ -569,6 +580,7 @@ Everything is changed on the settings page, except `WEB_KEY` (a Cloudflare secre
 | `CUSTOM_FORMAT` | `openai` | The relay's format: `openai` or `anthropic` (with caching) |
 | `CLAUDE_CODE_OAUTH_TOKEN` | empty | The setup token from `claude setup-token`, for `claude-code/…` models |
 | `CLAUDE_BOX_URL` / `CLAUDE_BOX_KEY` | empty | The [Claude box](docs/claude-box.md)'s address through its Cloudflare Tunnel, and its key (at least 32 characters) |
+| `KIRO_API_KEY` / `KIRO_BOX_URL` / `KIRO_BOX_KEY` | empty | The Kiro box (see "Your Kiro credits"): your `ksk_…` Kiro API key (secret), the box's address through its Cloudflare Tunnel, and its key (secret, at least 32 characters) |
 
 ## What it costs
 

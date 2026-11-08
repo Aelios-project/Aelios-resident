@@ -97,6 +97,10 @@ interface Env {
   CLAUDE_CODE_OAUTH_TOKEN?: string;
   // The key the Claude box checks (its BOX_KEY).
   CLAUDE_BOX_KEY?: string;
+  // The Kiro box for the kiro/… models (kiro-box/): the owner's Kiro API key (ksk_…), the box's address and its key.
+  KIRO_API_KEY?: string;
+  KIRO_BOX_URL?: string;
+  KIRO_BOX_KEY?: string;
   // Empty: AI Gateway uses the key stored on the gateway for the voice provider (BYOK).
   VOICE_API_KEY?: string;
   // Firebase service account JSON for optional native Android push. Worker secret only.

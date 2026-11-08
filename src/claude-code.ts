@@ -47,15 +47,15 @@ export type ClaudeCodeTurn = {
   record?(said: string, reply: string): void;
 };
 
-type Block = Record<string, unknown> & { type?: unknown };
-type Message = { role?: unknown; content?: unknown };
+export type Block = Record<string, unknown> & { type?: unknown };
+export type Message = { role?: unknown; content?: unknown };
 type Item = { entries: unknown[] } | { role: "user" | "assistant"; content: Block[] };
 
 // One entry over this is not kept (a row holds at most 2 MB); its message goes as it is next time.
 const SEGMENT_MAX_CHARS = 1_800_000;
 const TOOL_TEXT_MAX = 4000;
 
-function blocksOf(content: unknown): Block[] {
+export function blocksOf(content: unknown): Block[] {
   if (typeof content === "string") return content ? [{ type: "text", text: content }] : [];
   return Array.isArray(content) ? content.filter((block): block is Block => Boolean(block) && typeof block === "object") : [];
 }
@@ -183,7 +183,7 @@ export function fingerprint(role: string, content: unknown): Promise<string> {
   return sha256(JSON.stringify(sayings(role, content)));
 }
 
-function systemText(system: unknown): string {
+export function systemText(system: unknown): string {
   if (typeof system === "string") return system;
   return blocksOf(system)
     .map((block) => (block.type === "text" ? String(block.text ?? "") : ""))
@@ -224,12 +224,12 @@ function sized(entries: unknown[]): unknown[] | null {
 
 const encoder = new TextEncoder();
 
-function sse(event: StreamEvent): Uint8Array {
+export function sse(event: StreamEvent): Uint8Array {
   return encoder.encode(`event: ${String(event.type)}\ndata: ${JSON.stringify(event)}\n\n`);
 }
 
 /** An answer the AI SDK reads as the Messages API refusing the call, with the reason she is shown. */
-function refusal(status: number, message: string): Response {
+export function refusal(status: number, message: string): Response {
   return Response.json({ type: "error", error: { type: status === 401 ? "authentication_error" : "api_error", message } }, { status });
 }
 
@@ -237,7 +237,7 @@ function refusal(status: number, message: string): Response {
  * Lines of an NDJSON stream as they come. When `stop` aborts, or the lines are no longer read, the stream is
  * cancelled: the connection to the box closes, and the box stops the turn.
  */
-async function* lines(body: ReadableStream<Uint8Array>, stop: AbortSignal): AsyncGenerator<Record<string, unknown>> {
+export async function* lines(body: ReadableStream<Uint8Array>, stop: AbortSignal): AsyncGenerator<Record<string, unknown>> {
   const reader = body.pipeThrough(new TextDecoderStream()).getReader();
   const cancel = () => void reader.cancel(stop.reason).catch(() => {});
   if (stop.aborted) cancel();
@@ -446,7 +446,7 @@ export function boxFetch(turn: ClaudeCodeTurn, thinking?: Thinking): typeof fetc
   };
 }
 
-type StreamEvent = {
+export type StreamEvent = {
   type?: unknown;
   index?: number;
   message?: Record<string, unknown>;
