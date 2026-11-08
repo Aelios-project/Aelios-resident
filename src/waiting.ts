@@ -29,7 +29,7 @@ export type WaitingInput = {
   /** Notes a thread left with its last receipt. */
   notes: { thread: string; task: string; key: string; text: string; at: number }[];
   /** Each thread's newest task. */
-  threads: { id: string; taskId: string; title: string; status: string; runs: string; summary: string; choices: string[]; waiting: boolean; updatedAt: number }[];
+  threads: { id: string; taskId: string; title: string; status: string; runs: string; summary: string; choices: string[]; reason: string; waiting: boolean; updatedAt: number }[];
   /** Ids of note, done and stuck items the owner has read. */
   seen: ReadonlySet<string>;
   now: number;
@@ -38,9 +38,17 @@ export type WaitingInput = {
 const NEEDS_SETTING = /\b(api[ _-]?key|token|credential|sign[ -]?in|log[ -]?in|login|unauthori[sz]ed|authenticat\w*)\b|密钥|登录|授权|令牌/i;
 const NEEDS_PERMISSION = /\b(permission|not allowed|denied)\b|权限/i;
 
-/** What the owner can do about a failed thread, if anything. A failure they can do nothing about is only the thread's status. */
-export function stuckAction(summary: string, choices: readonly string[]): WaitingAction | null {
+/** What the runner says the owner can do for each reason it gives (machine.ts FAIL_REASONS). The others are only the thread's status. */
+const BY_REASON: Record<string, WaitingAction> = { needs_login: "settings", missing_key: "settings", permission_denied: "open" };
+
+/**
+ * What the owner can do about a failed thread, if anything. A failure they can do nothing about is only the thread's
+ * status. The runner's reason code decides; the keyword match on the text is the fallback for a result that has none
+ * (rows from before the code existed, cloud tasks).
+ */
+export function stuckAction(summary: string, choices: readonly string[], reason = ""): WaitingAction | null {
   if (choices.length) return "";
+  if (reason) return BY_REASON[reason] ?? null;
   if (NEEDS_SETTING.test(summary)) return "settings";
   return NEEDS_PERMISSION.test(summary) ? "open" : null;
 }
@@ -76,7 +84,7 @@ export function build({ asks, notes, threads, seen, now }: WaitingInput): { item
     } else if (thread.status === "done") {
       put({ ...base, id: `${thread.id}:done:${thread.updatedAt}`, kind: "done", line: firstSentence(thread.summary) });
     } else if (thread.status === "failed") {
-      const action = stuckAction(thread.summary, thread.choices);
+      const action = stuckAction(thread.summary, thread.choices, thread.reason);
       if (action !== null) put({ ...base, id: `${thread.id}:stuck:${thread.updatedAt}`, kind: "stuck", line: firstSentence(thread.summary), options: thread.choices, action });
     }
   }

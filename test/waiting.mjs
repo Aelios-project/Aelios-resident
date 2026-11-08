@@ -21,7 +21,7 @@ try {
 
 const DAY = 86_400_000;
 const now = 100 * DAY;
-const thread = (id, extra = {}) => ({ id, taskId: `${id}-t`, title: `Title ${id}`, status: "working", runs: "machine", summary: "", choices: [], waiting: false, updatedAt: now - 1000, ...extra });
+const thread = (id, extra = {}) => ({ id, taskId: `${id}-t`, title: `Title ${id}`, status: "working", runs: "machine", summary: "", choices: [], reason: "", waiting: false, updatedAt: now - 1000, ...extra });
 const input = (extra = {}) => ({ asks: [], notes: [], threads: [], seen: new Set(), now, ...extra });
 const ask = (extra = {}) => ({ thread: "a", task: "a-t", key: "k1", question: "Which one first? Then more.", options: ["A", "B"], recommend: "A", at: now - 1000, ...extra });
 
@@ -39,6 +39,16 @@ await test("only decisions and actions are listed: asks first, a stuck one with 
   assert.equal(waiting.firstSentence("x".repeat(300)).length, 120);
   assert.equal(waiting.stuckAction("Blocked: no network", []), null);
   assert.equal(waiting.stuckAction("Permission denied for rm", []), "open");
+});
+
+await test("the runner's reason code decides what a failure asks of the owner; the keywords are only the fallback", () => {
+  assert.equal(waiting.stuckAction("anything", [], "needs_login"), "settings");
+  assert.equal(waiting.stuckAction("anything", [], "missing_key"), "settings");
+  assert.equal(waiting.stuckAction("anything", [], "permission_denied"), "open");
+  for (const reason of ["helper_missing", "workspace_denied", "error"]) assert.equal(waiting.stuckAction("The API key was rejected.", [], reason), null, "a code that is not actionable wins over the words");
+  assert.equal(waiting.stuckAction("The API key was rejected.", [], ""), "settings", "old rows: keywords");
+  const { items } = waiting.build(input({ threads: [thread("a", { status: "failed", summary: "x", reason: "needs_login" }), thread("b", { status: "failed", summary: "x", reason: "error" })] }));
+  assert.deepEqual(items.map((i) => [i.thread, i.action]), [["a", "settings"]]);
 });
 
 await test("a needs_you thread without a question is not an ask; a machine thread's needs_you shows only its ask; a stopped one gives nothing", () => {

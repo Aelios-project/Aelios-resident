@@ -84,6 +84,8 @@ export type Task = {
   chosen: string;
   /** For needs_you: dealt with, by an answer they picked or by their saying it needs none. */
   settled: boolean;
+  /** For a failed result from a machine: why, as a code (machine.ts FAIL_REASONS); "" when the runner gave none. */
+  reason: string;
   test: boolean;
   createdAt: number;
   updatedAt: number;
@@ -357,6 +359,7 @@ type Row = {
   links: string;
   choices: string;
   chosen: string;
+  reason: string;
   settled: number;
   notices: number;
   test: number;
@@ -384,6 +387,7 @@ function taskOf(row: Row): Task {
     links: JSON.parse(row.links || "[]") as string[],
     choices: JSON.parse(row.choices || "[]") as string[],
     chosen: row.chosen ?? "",
+    reason: row.reason ?? "",
     // A pick made before settled was kept counts too.
     settled: Boolean(row.settled) || Boolean(row.chosen),
     test: Boolean(row.test),
@@ -482,7 +486,8 @@ export class TaskStore {
       ["chosen", () => sql`ALTER TABLE res_tasks ADD COLUMN chosen TEXT NOT NULL DEFAULT ''`],
       ["settled", () => sql`ALTER TABLE res_tasks ADD COLUMN settled INTEGER NOT NULL DEFAULT 0`],
       ["role", () => sql`ALTER TABLE res_tasks ADD COLUMN role TEXT NOT NULL DEFAULT ''`],
-      ["unasked", () => sql`ALTER TABLE res_tasks ADD COLUMN unasked INTEGER NOT NULL DEFAULT 0`]
+      ["unasked", () => sql`ALTER TABLE res_tasks ADD COLUMN unasked INTEGER NOT NULL DEFAULT 0`],
+      ["reason", () => sql`ALTER TABLE res_tasks ADD COLUMN reason TEXT NOT NULL DEFAULT ''`]
     ] as const) {
       try {
         if (column === "root") sql`SELECT root FROM res_tasks LIMIT 0`;
@@ -492,6 +497,7 @@ export class TaskStore {
         else if (column === "chosen") sql`SELECT chosen FROM res_tasks LIMIT 0`;
         else if (column === "settled") sql`SELECT settled FROM res_tasks LIMIT 0`;
         else if (column === "role") sql`SELECT role FROM res_tasks LIMIT 0`;
+        else if (column === "reason") sql`SELECT reason FROM res_tasks LIMIT 0`;
         else sql`SELECT unasked FROM res_tasks LIMIT 0`;
       } catch {
         add();
@@ -548,7 +554,7 @@ export class TaskStore {
     const task = this.get(id);
     if (!task || task.runs !== "linux" || (task.status !== "failed" && task.status !== "quiet")) return false;
     this.sql`UPDATE res_tasks SET status = ${"working"}, progress = ${""}, progress_at = ${null}, progress_count = ${0}, summary = ${""},
-      links = ${"[]"}, choices = ${"[]"}, chosen = ${""}, settled = ${0}, updated_at = ${Date.now()} WHERE id = ${id}`;
+      links = ${"[]"}, choices = ${"[]"}, reason = ${""}, chosen = ${""}, settled = ${0}, updated_at = ${Date.now()} WHERE id = ${id}`;
     return true;
   }
 
@@ -570,16 +576,16 @@ export class TaskStore {
    * Saves a result. Returns whether it should start a turn of the resident's (a few per task at most): not for a
    * test, and not for what they wrote to a thread themselves (they read the answer there).
    */
-  result(id: string, result: { status: TaskStatus; summary: string; links: string[]; choices?: string[] }): boolean {
+  result(id: string, result: { status: TaskStatus; summary: string; links: string[]; choices?: string[]; reason?: string }): boolean {
     this.sql`UPDATE res_tasks SET status = ${result.status}, summary = ${result.summary}, links = ${JSON.stringify(result.links)},
-      choices = ${JSON.stringify(result.choices ?? [])}, chosen = ${""}, settled = ${0}, updated_at = ${Date.now()}, notices = notices + 1 WHERE id = ${id}`;
+      choices = ${JSON.stringify(result.choices ?? [])}, reason = ${result.reason ?? ""}, chosen = ${""}, settled = ${0}, updated_at = ${Date.now()}, notices = notices + 1 WHERE id = ${id}`;
     const [row] = this.sql<{ notices: number; test: number; direct: number }>`SELECT notices, test, direct FROM res_tasks WHERE id = ${id}`;
     return Boolean(row && !row.test && !row.direct && row.notices <= NOTICES_MAX);
   }
 
   /** A task's state moved by the world outside (a pull request merged): not a report, so no notice and no turn. */
   moved(id: string, status: TaskStatus, summary: string): void {
-    this.sql`UPDATE res_tasks SET status = ${status}, summary = ${summary}, choices = ${"[]"}, chosen = ${""}, updated_at = ${Date.now()} WHERE id = ${id}`;
+    this.sql`UPDATE res_tasks SET status = ${status}, summary = ${summary}, choices = ${"[]"}, reason = ${""}, chosen = ${""}, updated_at = ${Date.now()} WHERE id = ${id}`;
   }
 
   /**

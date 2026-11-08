@@ -16,7 +16,7 @@ export class WaitingStore {
     const threads = this.tasks.threads(THREADS_LOOKED_AT).flatMap((card) => {
       const task = this.tasks.latest(card.id);
       return task && !task.test && task.runs !== "retired"
-        ? [{ id: card.id, taskId: task.id, title: card.title, status: task.status, runs: task.runs, summary: task.summary, choices: task.choices ?? [], waiting: card.waiting, updatedAt: task.updatedAt }]
+        ? [{ id: card.id, taskId: task.id, title: card.title, status: task.status, runs: task.runs, summary: task.summary, choices: task.choices ?? [], reason: task.reason ?? "", waiting: card.waiting, updatedAt: task.updatedAt }]
         : [];
     });
     const seen = new Set(this.sql<{ id: string }>`SELECT id FROM res_waiting_seen`.map((row) => row.id));
