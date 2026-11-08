@@ -17,6 +17,8 @@
 //   GET  /manifest.webmanifest          the web page as an app for the home screen, with the resident's name and avatar
 //   POST /runner/v1/pair|heartbeat|poll|receipt|progress|permission   the paired machine's runner (machine.ts, Aelios-desktop packages/runner/PROTOCOL.md):
 //                                       pairing with a code from the settings page, then its own token as Bearer
+//   POST /box/v1/pair, GET /box/v1/link   a box (acp-box/) pairing with a code, then dialing in on a WebSocket with its
+//                                       own token (box-routes.ts, box-hub.ts); /web/boxes is its settings page
 //   POST /tasks/<id>/progress|result    a GitHub Actions run or a cloud Claude Code session reporting on its task
 //                                       (cloud-tasks.ts), with the task's one-time code in x-task-code
 //   POST /tasks/<id>/hands              a GitHub Actions run asking for the GitHub token (code in x-task-code)
@@ -29,6 +31,7 @@
 // deletes them.
 
 import { getAgentByName } from "agents";
+import { boxPublic, boxWeb } from "./box-routes";
 import { machineReply, readMachineJson } from "./machine";
 import { callerAllowed, issueSession, miniAppCaller, triesMiniApp } from "./mini-app";
 import { MCP_CALLBACK_PATH } from "./mcp-servers";
@@ -40,7 +43,7 @@ import { DEFAULT_RESIDENT, RESIDENTS_MAX, residentOfPath, residentPrefix } from 
 
 export { ThinkMessengerStateAgent } from "@cloudflare/think/messengers";
 export { Resident } from "./resident";
-export { ClaudeBox } from "./claude-box";
+export { BoxHub } from "./box-hub";
 export { TaskWorker } from "./task-worker";
 
 const WECOM_PATH = "/messengers/wecom/webhook";
@@ -318,6 +321,7 @@ async function handleWeb(request: Request, env: Env, url: URL, at: At): Promise<
           model?: string;
           label?: string;
           runnerId?: string;
+          plug?: string;
           all?: boolean;
           item?: string;
           allow?: boolean;
@@ -516,6 +520,11 @@ async function handleWeb(request: Request, env: Env, url: URL, at: At): Promise<
       const set = await agent.webGitHubSetup(at.base);
       return Response.json(set, { status: "error" in set ? 400 : 200 });
     }
+    case "GET /web/boxes":
+    case "POST /web/boxes/code":
+    case "POST /web/boxes/revoke":
+    case "POST /web/boxes/serve":
+      return (await boxWeb(env, at.id, request.method, url.pathname, body)) ?? new Response("not found", { status: 404 });
     case "GET /web/runner":
       return Response.json(await agent.webMachine());
     case "POST /web/runner/code":
@@ -631,6 +640,7 @@ export default {
       }
       const runner = url.pathname.match(/^\/runner\/v1\/(pair|heartbeat|poll|receipt|progress|permission|file)$/);
       if (runner) return await handleRunner(request, env, at, runner[1] as "pair" | "heartbeat" | "poll" | "receipt" | "progress" | "permission" | "file");
+      if (/^\/box\/v1\/(pair|link)$/.test(url.pathname)) return await boxPublic(request, env, at.id, url.pathname);
       // A GitHub Actions run of the hands: the GitHub token to work with, and the model through the resident.
       const hands = url.pathname.match(/^\/tasks\/(t_[0-9a-f]{10})\/(hands|model\/chat\/completions)$/);
       if (hands && request.method === "POST") {

@@ -202,7 +202,7 @@ Telegram（选装）──▶ Worker（验 secret、白名单、命令）──�
 - 没选时用 `@cf/zai-org/glm-4.7-flash`，从 Aelios 过。
 - 以前存的自己的供应商模型（`custom/…`）不再支持：会用默认模型，选择器里有一行说明旧的选择已经去掉了。
 - Claude 填 `anthropic/claude-opus-5.5` 这种写法。每轮都带缓存标记，缓存默认留 1 小时（`CACHE_TTL`）。Claude 5 以后的模型每轮都会想，想的内容以摘要形式显示在「想了一下」里；想多久在设置页「思考和交接信」里调。
-- 接了 Aelios 时，选的模型都从 Aelios 过，用 Aelios 那边配好的 key。只有 `claude-code/…` 例外，它用你自己的 Claude 订阅（见[用自己的 Claude 订阅](#用自己的-claude-订阅claude-code)）。
+- 接了 Aelios 时，选的模型都从 Aelios 过，用 Aelios 那边配好的 key。只有 `claude-code/…` 例外，它用你自己的 Claude 订阅（见[盒子](#盒子用自己的-claude-订阅和-kiro-额度)）。
 
 ### 人设
 
@@ -500,34 +500,29 @@ GitHub 那边接着做时，每次都是新开的，上一单的结果只是参�
 
 ### 供应商
 
-住户要接 Aelios：聊天用的模型和 key 在 Aelios 后台配。另一条路是盒子：[`claude-code/…`](#用自己的-claude-订阅claude-code) 或 [`kiro/…`](#用自己的-kiro-额度kiro)。模型没有别的路；没接 Aelios、也没装盒子时，住户会直接说这件事，不会退回别的地方。
+住户要接 Aelios：聊天用的模型和 key 在 Aelios 后台配。另一条路是盒子：[`claude-code/…` 或 `kiro/…`](#盒子用自己的-claude-订阅和-kiro-额度)。模型没有别的路；没接 Aelios、也没装盒子时，住户会直接说这件事，不会退回别的地方。
 
 - **AI Gateway 的名字**（`AI_GATEWAY_ID`，留空就是 `default`）：搜网和语音走这个 Gateway；Provider Keys 里存的 key 也只在它里面找。
 
-### 用自己的 Claude 订阅（`claude-code/…`）
+### 盒子：用自己的 Claude 订阅和 Kiro 额度
 
-聊天可以不用 API key，改用你自己的 Claude Pro 或 Max 订阅：模型填 `claude-code/` 加 Claude 的模型 id，比如 `claude-code/claude-opus-5-5`。这样每一轮都交给 Claude 盒子（`claude-box/`）：一个小服务，里面跑官方的 Claude Agent SDK，用你 `claude setup-token` 拿到的那串登录，放在你自己的一台机器上，经 Cloudflare Tunnel 让住户连过去。别的都还是住户自己的：对话、人设、交接信、心跳、各个渠道和工具。
+聊天可以用你自己的 Claude Pro 或 Max 订阅（`claude-code/…`，比如 `claude-code/claude-opus-5-5`），也可以用你自己的 Kiro 额度（`kiro/auto`，或 `kiro/` 加 `kiro-cli chat --list-models` 里的任一 id）。这两种的每一轮都交给**盒子**：一个你在自己机器上跑的小程序（`acp-box/`）。其余都还是住户自己的：对话、人设、交接信、心跳、各个渠道和工具。
 
-- **给盒子一台机器**：Google Cloud 免费的 e2-micro 就够。在 Cloud Shell 里跑 `bash claude-box/gcp.sh --hostname claude-box.<你的域名>`，它开一台只用 IPv6 的机器（不用付 IPv4 地址的钱），把盒子和 Tunnel 装好；别的装了 systemd 的 Linux 机器上跑 `sudo claude-box/install.sh --tunnel`。机器要连得上 `api.anthropic.com`，大陆和香港的不行。一步一步怎么做（也能直接丢给 AI 照着做）：[docs/claude-box.md](docs/claude-box.md)。
-- **填进设置页「供应商」**：电脑上 `claude setup-token` 出来的 `sk-ant-oat…`、盒子地址（Tunnel 的网址）、装的时候生成的盒子钥匙。钥匙和 token 填了就不再显示；想退出就在那里清空。
-- **工具跟别的模型一样能用**：Claude Code 调住户的工具，那条回复停在那里，住户跑完工具，盒子里同一个 Claude Code 拿着结果接着说。Claude Code 自己的工具（跑命令、读写文件、上网）一律关着。接了 Aelios 的话，住户还会每句先替你去 Aelios 想起来，回完再把这一来一回记进 Aelios，因为这些轮次不经过 Aelios 的模型接口（Aelios 的模型清单也就管不到它们）。
-- **盒子里什么都不存**：每一轮都带上整段对话；盒子回过的话，按 Claude Code 自己记的样子送回去（存在 Durable Object 里），所以每一轮都接得上提示缓存，盒子重启过也接着聊。
-- 这是你自己的订阅、你自己的账号：一串 setup token 只给一个人自己的住户用。
+**盒子主动连出去。** 它向住户开一条 WebSocket 并一直连着（断了按退避重连）。住户把一轮话从这条线推下去，盒子把回复和工具调用从这条线送回来。不用 Tunnel、不用盒子的网址、不用域名，盒子也不对外开任何端口。连着不说话不花钱：住户用 WebSocket Hibernation API 把这些连接放在一个 Durable Object 里。连住户这一段只有 IPv6 也行。
 
-### 用自己的 Kiro 额度（`kiro/…`）
+**帮手的钥匙只放在盒子那台机器上。** 住户不存也不发 Kiro API key 和 Claude 的 setup token，盒子也不写进日志。盒子从自己的环境变量（`KIRO_API_KEY`、`CLAUDE_CODE_OAUTH_TOKEN`）读，或者读配置文件夹里的一个文件（权限 0600）；第一次起的时候它会问你填。
 
-聊天也可以用你自己的 Kiro 额度：模型填 `kiro/auto`（或 `kiro/` 加 `kiro-cli chat --list-models` 里看到的任一个 id）。每一轮交给 ACP 盒子（`acp-box/`）：在你自己的一台机器上跑 `kiro-cli acp`，经 Cloudflare Tunnel 让住户连过去。这个模式下住户是一个个人秘书式的智能体：读消息、做决定、把活交给线程，用的是住户自己的工具；Kiro 自带的工具全关。
-
-- **拿 Kiro API key**：在 Kiro 后台为 headless 模式生成一个 API key（`ksk_` 开头），见 [Kiro headless 文档](https://kiro.dev/docs/cli/headless/)。
-- **起盒子**：机器上装好 [Kiro CLI](https://kiro.dev/docs/cli/)，Cloudflare Tunnel 指向它：`cd acp-box && PORT=8791 BOX_HOST=127.0.0.1 BOX_KEY=<32 位以上随机串> node server.mjs`（Node.js 22+，不用装包）。Tunnel 的建法和 Claude 盒子一样，见 [docs/claude-box.md](docs/claude-box.md)。
-- **填进设置页「供应商」**：密钥 `KIRO_API_KEY`（`ksk_…`）、`KIRO_BOX_URL`（Tunnel 的网址）、密钥 `KIRO_BOX_KEY`（起盒子时的 `BOX_KEY`）。然后模型选 `kiro/auto`，填了 key 以后它会出现在建议里。key 只送到你自己的盒子，不写日志，填了就不再显示。
-- **住户自己的工具**：盒子用自己的 MCP 服务把它们交给 Kiro，这是 Kiro agent 里唯一的 MCP 服务，也只信任它。Kiro 调一个工具，这一段回话停下，住户去跑，同一个 Kiro 会话拿着结果接着说。
-- **刻意剥到最少**：每个 Kiro 会话用一个自定义 agent，提示词是住户自己的，没有自带工具，没有别的 MCP 服务（也不带全局 `mcp.json`），没有 resources（不加载 steering 和规则文件），在空文件夹和单独的 home 里跑，会话结束 home 就删掉。Kiro 自己的底层提示词还在下面，去不掉。
-- **一段对话一个活会话**：盒子开着时，给住户的对话留一个 Kiro 会话，每轮只发新的话。住户写交接信（或对话别的地方变了）、盒子重启、会话出错或闲置一小时，这个会话就丢掉，从住户当前的对话重新开一个。盒子上不留对话内容。
-- **花的是你的 Kiro 额度**，在模型选择器里每选一次会试调一小轮。Kiro 每轮报的额度（credits）累加存在住户的存储里（`kiro_credits`）；用量时间流里这一轮没有 token 数。
-- **插头**：盒子不认具体帮手。`acp-box/plugs/` 里一个插头（现在只有 `kiro.mjs`）说怎么启动它的 ACP 智能体、把剥好的设置写进会话的 home、怎么读额度；换别的 ACP 帮手就是再加一个插头文件。
-- **测试开关**：`KIRO_BOX_LOCAL_LOGIN=1`（默认关）让没填 API key 的盒子用这台机器自己 `kiro-cli login` 的一份拷贝，方便在本机试。正式的盒子用 `KIRO_API_KEY`。
-- **限制**：图片只留一个标记，新会话最多带对话最新的 10 万字符。
+- **装**：任何有 Node.js 22+ 的机器都行，家里的电脑，或者免费的云主机（Google Cloud 的 e2-micro 够用）。`cd acp-box && npm ci`；Linux 加 systemd 的话 `sudo acp-box/install.sh --resident <地址> --code <配对码>` 装成服务。
+- **配对**：设置页「供应商」→「盒子」那行的链接按钮会给一个一次性的配对码（10 分钟）。在盒子那台机器上运行 `node main.mjs --resident https://<你的 Worker> --code ABCD-EFGH`。盒子用配对码换到自己的 token，存在 `~/.config/aelios-box/`（权限 0600）。以后直接 `node main.mjs` 就行。
+- **可以配好几台**。设置页列出每一台的名字（机器的名字）、它有的插头、在不在线、上次见到的时间，和「撤销」（连接马上断，token 作废）。两台有同一个插头时，你选哪台来管；不选就是最近连上的那台。
+- **插头**：盒子连上时报它现在能做的（`kiro`、`claude`），住户按模型名的前缀把话送给连着的盒子（`kiro/…` 送 `kiro` 插头，`claude-code/…` 送 `claude`）。做不了的插头会报「用不了」，附一句原因，设置页上看得到。
+- **不在线**：选的模型没有盒子连着时，这一轮用 Aelios 的默认模型回，聊天里留一行说盒子不在线。
+- **帮手在哪能跑**：连住户这一段只要 IPv6 就行，但帮手自己要连得上它的服务商。**Claude 插头在只有 IPv6 的机器上能用。Kiro 插头需要能出 IPv4**：Kiro 的服务地址没有 IPv6，所以要在家里的电脑上跑，或者在只有 IPv6 的云主机上加 Cloudflare WARP 之类的 IPv4 出口。带 kiro 插头的盒子启动时（之后每隔几分钟）会试连 `q.us-east-1.amazonaws.com`，连不上就报这个插头「用不了」，不会每一轮都失败。
+- **Claude**：`claude` 插头跑官方的 Claude Agent SDK，用你 `claude setup-token` 拿到的登录。工具和别的模型一样能用：Claude Code 通过盒子本机的 MCP 服务调住户的工具，回复停在那里，住户跑完，同一个 Claude Code 接着往下。Claude Code 自己的工具（命令、文件、网页）都关着。一步一步的说明见 [docs/claude-box.md](docs/claude-box.md)。这是你自己的订阅：一个 setup token 只给一个人自己的住户用。
+- **Kiro**：`kiro` 插头跑 `kiro-cli acp`，机器上要装好 [Kiro CLI](https://kiro.dev/docs/cli/)，用无头模式的 API key 登录（`ksk_` 开头，在 Kiro 后台生成；见 [Kiro headless mode](https://kiro.dev/docs/cli/headless/)）。住户的工具通过盒子自己的 MCP 服务给 Kiro，那是 Kiro 的 agent 里唯一的一个。每个 Kiro 会话是一个定制 agent：提示词就是住户自己的，没有内置工具、没有别的 MCP、没有资源，工作目录是空的，home 是会话自己的、会话结束就删。每段对话盒子只留一个活的会话，每轮只送新的；会话没了，就用住户那边的对话重新开。对话本身不写在盒子上。图片只送一个标记，新会话最多拿到最近 100,000 个字符。
+- **花的是你的额度或订阅**，在选择器里每选一次模型会做一次很小的试调。Kiro 每轮报的额度加总记在住户的存储里，用量时间线上这一轮不带 token 数。
+- **从 Tunnel 盒子搬过来**：旧的设置（`CLAUDE_CODE_OAUTH_TOKEN`、`CLAUDE_BOX_URL`、`CLAUDE_BOX_KEY`、`KIRO_API_KEY`、`KIRO_BOX_URL`、`KIRO_BOX_KEY`）住户启动时会删掉，不再读。照上面配好盒子，钥匙放到盒子那台机器上；Cloudflare Tunnel 不再需要。
+- **测试开关**：`KIRO_BOX_LOCAL_LOGIN=1`（默认关）让没有 API key 的盒子用这台机器自己 `kiro-cli login` 的一份拷贝，方便在本机试。
 
 ## 设置一览
 
@@ -576,9 +571,6 @@ GitHub 那边接着做时，每次都是新开的，上一单的结果只是参�
 | `CLOUD_TASK_GITHUB_TOKEN` | 空 | 选填：GitHub token（勾 `repo` 和 `workflow`），住户用它建私有仓库、在 GitHub Actions 上干活；可以存成 Cloudflare 的 Secret |
 | `CLOUD_TASK_MODEL` | 空 | 线程用的模型（住户这里和 GitHub Actions 上都是），填模型选择器里认的名字；留空用 Workers AI 的 `@cf/zai-org/glm-4.7-flash` |
 | `AI_GATEWAY_ID` | 空（用 `default`） | 搜网、语音走哪个 AI Gateway |
-| `CLAUDE_CODE_OAUTH_TOKEN` | 空 | `claude setup-token` 拿到的那串，给 `claude-code/…` 用 |
-| `CLAUDE_BOX_URL` / `CLAUDE_BOX_KEY` | 空 | [Claude 盒子](docs/claude-box.md)经 Cloudflare Tunnel 出来的网址，和它的钥匙（至少 32 位） |
-| `KIRO_API_KEY` / `KIRO_BOX_URL` / `KIRO_BOX_KEY` | 空 | Kiro 盒子（见「用自己的 Kiro 额度」）：你的 `ksk_…` Kiro API key（密钥）、盒子经 Cloudflare Tunnel 出来的网址、它的钥匙（密钥，至少 32 位） |
 
 ## 花钱吗
 
@@ -592,7 +584,7 @@ GitHub 那边接着做时，每次都是新开的，上一单的结果只是参�
 - **表情包、别的 MCP**：每轮多带一些说明；设置页上每个包、每个服务旁边写着大约多少 token。
 - **心跳、闹钟**：每次都是它的一轮。心跳趁缓存还热的时候问，跟你发一条差不多。闹钟如果在你一小时以上没说话之后才响，缓存已经凉了，整段对话要重写一遍（1 小时缓存的写入是输入价的 2 倍，读最多 1/10），这一下大约顶平时 20 多条消息的输入。所以闹钟默认关，开了也有上限。
 - **云端 Claude Code**：每单是一个完整的云端会话，跟你自己开一个一样用订阅的额度；住户这边只多一次请求和一轮回复。
-- **用自己的 Claude 订阅**（`claude-code/…`）：聊天用订阅的额度，不花 API 的钱。盒子那台机器用 Google Cloud 的免费额度不花钱（us-west1、us-central1、us-east1 里一台 e2-micro 加 30 GB 标准盘；每月送 1 GB 出站流量，超出大约 0.12 美元一 GB；只用 IPv6 就没有 IPv4 地址的钱；10 月 28 日查的官方价）。每一轮都重新起一次 Claude Code，所以回得比走 API 慢几秒。
+- **用自己的 Claude 订阅**（`claude-code/…`）：聊天用订阅的额度，不花 API 的钱。盒子那台机器用 Google Cloud 的免费额度不花钱（us-west1、us-central1、us-east1 里一台 e2-micro 加 30 GB 标准盘；每月送 1 GB 出站流量，超出大约 0.12 美元一 GB；只用 IPv6 就没有 IPv4 地址的钱，这对 Claude 插头够用，Kiro 插头不够；10 月 28 日查的官方价）。每一轮都重新起一次 Claude Code，所以回得比走 API 慢几秒。
 
 **注意 AI Gateway 认 key 的顺序**：请求里带了 key（设置页填的）就用它；没带就用 Gateway 里别名 `default` 的那把；都没有就走 Cloudflare 的统一计费，从 Gateway 预付额度里扣（前提是账户里有额度、那一家也支持）。不想被这样扣，就在 Gateway 设置里打开 Require provider credentials。
 

@@ -77,7 +77,7 @@ export function creditsOf(params) {
 export default {
   name: "kiro",
   problem(turn) {
-    if (!turn.key?.trim() && process.env.KIRO_BOX_LOCAL_LOGIN !== "1") return "KIRO_API_KEY is not set: put your Kiro API key (ksk_…) on the settings page";
+    if (!turn.key?.trim() && process.env.KIRO_BOX_LOCAL_LOGIN !== "1") return "KIRO_API_KEY is not set on the box machine";
     if (typeof turn.model !== "string" || !MODEL_PATTERN.test(turn.model)) return "model is missing or not a valid Kiro model id";
     return null;
   },

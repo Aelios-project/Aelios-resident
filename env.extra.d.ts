@@ -35,9 +35,6 @@ interface Env {
   // A provider of your own (custom.ts): its address up to /v1, and openai (default) or anthropic.
   CUSTOM_BASE_URL?: string;
   CUSTOM_FORMAT?: string;
-  // The Claude box for the claude-code/… models (claude-box/, docs/claude-box.md): its address, as the tunnel
-  // serves it.
-  CLAUDE_BOX_URL?: string;
   CHECKIN_SCHEDULE?: string;
   // When the quiet time ends but an automatic letter is not due yet, ask whether to reach out, up to this many times
   // in one quiet time: 3 by default, 0 or off never, at most 10.
@@ -93,14 +90,6 @@ interface Env {
   BRAVE_API_KEY?: string;
   PERPLEXITY_API_KEY?: string;
   CUSTOM_API_KEY?: string;
-  // `claude setup-token`, for the `claude-code/…` models that run on her own Claude subscription (claude-code.ts).
-  CLAUDE_CODE_OAUTH_TOKEN?: string;
-  // The key the Claude box checks (its BOX_KEY).
-  CLAUDE_BOX_KEY?: string;
-  // The Kiro box for the kiro/… models (kiro-box/): the owner's Kiro API key (ksk_…), the box's address and its key.
-  KIRO_API_KEY?: string;
-  KIRO_BOX_URL?: string;
-  KIRO_BOX_KEY?: string;
   // Empty: AI Gateway uses the key stored on the gateway for the voice provider (BYOK).
   VOICE_API_KEY?: string;
   // Firebase service account JSON for optional native Android push. Worker secret only.

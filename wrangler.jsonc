@@ -17,24 +17,30 @@
   // The web door (public/index.html). Everything else goes to the Worker first.
   "assets": {
     "directory": "public",
-    "run_worker_first": ["/messengers/*", "/tg/*", "/web/*", "/mcp/*", "/stickers/*", "/tasks/*", "/runner/*", "/avatar/*", "/r/*", "/manifest.webmanifest"]
+    "run_worker_first": ["/messengers/*", "/tg/*", "/web/*", "/mcp/*", "/stickers/*", "/tasks/*", "/runner/*", "/box/*", "/avatar/*", "/r/*", "/manifest.webmanifest"]
   },
   "durable_objects": {
     "bindings": [
-      { "name": "RESIDENT", "class_name": "Resident" }
+      { "name": "RESIDENT", "class_name": "Resident" },
+      // The sockets boxes dial in on (src/box-hub.ts), one object per resident.
+      { "name": "BOXES", "class_name": "BoxHub" }
     ]
   },
   // SQLite-backed Durable Objects are the kind the Workers Free plan allows. ClaudeBox (v2) is left from when the
-  // Claude box ran in a Cloudflare container; it holds nothing.
+  // Claude box ran in a Cloudflare container; it held nothing, and v3 makes it the box hub (no state to move).
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Resident"] },
-    { "tag": "v2", "new_sqlite_classes": ["ClaudeBox"] }
+    { "tag": "v2", "new_sqlite_classes": ["ClaudeBox"] },
+    { "tag": "v3", "renamed_classes": [{ "from": "ClaudeBox", "to": "BoxHub" }] }
   ],
   // Each branch Preview has its own Resident namespace; no production script_name.
   // Preview bindings are explicit rather than inherited from the production Worker.
   "previews": {
     "durable_objects": {
-      "bindings": [{ "name": "RESIDENT", "class_name": "Resident" }]
+      "bindings": [
+        { "name": "RESIDENT", "class_name": "Resident" },
+        { "name": "BOXES", "class_name": "BoxHub" }
+      ]
     },
     "ai": { "binding": "AI" },
     "browser": { "binding": "BROWSER" },

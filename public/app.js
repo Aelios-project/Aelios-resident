@@ -189,18 +189,9 @@ function resident() {
         picks: ['anthropic/claude-haiku-5.5', 'anthropic/claude-sonnet-5.5'],
         pickLabels: { 'anthropic/claude-haiku-5.5': 'Claude Haiku（示例）', 'anthropic/claude-sonnet-5.5': 'Claude Sonnet（示例）' } }
     ] },
-    { id: 'custom', title: '供应商', hint: '接了 Aelios，聊天的模型和 key 在 Aelios 后台配；这里管住户自己往外发的请求。', fields: [
+    { id: 'custom', title: '供应商', hint: '接了 Aelios，聊天的模型和 key 在 Aelios 后台配；这里管住户自己往外发的请求，和你自己机器上的盒子（Kiro、Claude 订阅）。', fields: [
       { key: 'AI_GATEWAY_ID', label: 'AI Gateway 的名字', def: 'default',
-        help: '搜网和语音走这个 Gateway，Provider Keys 里存的 key 也只在它里面找。留空就是 default。聊天的模型不走这里：走 Aelios 或盒子。' },
-      { key: 'CLAUDE_CODE_OAUTH_TOKEN', label: 'Claude 订阅的 setup token',
-        help: '模型填 claude-code/模型名（比如 claude-code/claude-opus-5-5）就用你自己的 Claude 订阅聊，工具照常能用。在电脑上跑 claude setup-token，把出来那串填这里。还要一台装了 Claude 盒子的机器，见 docs/claude-box.md（Google Cloud 的免费小机就行）。' },
-      { key: 'CLAUDE_BOX_URL', label: 'Claude 盒子地址', help: '装了 claude-box 的那台机器经 Cloudflare Tunnel 出来的网址。', placeholder: 'https://claude-box.…' },
-      { key: 'CLAUDE_BOX_KEY', label: 'Claude 盒子钥匙', help: '装盒子时生成的那串：Google Cloud 上跑 bash gcp.sh --show-key 看，自己的机器上跑 sudo sed -n \'s/^BOX_KEY=//p\' /etc/claude-box/env 看。别发在聊天里。' }
-      ,
-      { key: 'KIRO_API_KEY', label: 'Kiro API key',
-        help: '模型填 kiro/auto 就用你自己的 Kiro 额度聊（只说话，不用工具，要动手的活交给线程）。在 Kiro 后台生成 API key（ksk_ 开头）填这里。还要一台装了 Kiro 盒子的机器，见 README 的 Kiro box。别发在聊天里。' },
-      { key: 'KIRO_BOX_URL', label: 'Kiro 盒子地址', help: '跑着 acp-box 的那台机器经 Cloudflare Tunnel 出来的网址。', placeholder: 'https://kiro-box.…' },
-      { key: 'KIRO_BOX_KEY', label: 'Kiro 盒子钥匙', help: '起盒子时设的 BOX_KEY，至少 32 位。别发在聊天里。' }
+        help: '搜网和语音走这个 Gateway，Provider Keys 里存的 key 也只在它里面找。留空就是 default。聊天的模型不走这里：走 Aelios 或盒子。' }
     ] },
     { id: 'push', title: '通知', fields: [
       { key: 'WEB_PUSH', label: '推什么', def: 'on', labels: { on: '没发到别处的', always: '都推', off: '不推' },
@@ -3114,5 +3105,5 @@ function resident() {
       this.toast = message;
       setTimeout(function () { if (self.toast === message) self.toast = ''; }, 2400);
     }
-  }, typeof groupPage === 'function' ? groupPage() : {}, typeof machinePage === 'function' ? machinePage() : {}, typeof attachPage === 'function' ? attachPage() : {}, typeof waitingPage === 'function' ? waitingPage() : {}, typeof progressPage === 'function' ? progressPage() : {});
+  }, typeof groupPage === 'function' ? groupPage() : {}, typeof machinePage === 'function' ? machinePage() : {}, typeof boxesPage === 'function' ? boxesPage() : {}, typeof attachPage === 'function' ? attachPage() : {}, typeof waitingPage === 'function' ? waitingPage() : {}, typeof progressPage === 'function' ? progressPage() : {});
 }
