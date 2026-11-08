@@ -7,7 +7,7 @@
 //   crash-1  sends a slow reply; kill workerd once the first bubble is out, restart, then run crash-2
 //   crash-2  checks what she got after the restart
 //   migrate  needs the old model variable (start wrangler with --var MODEL:fake)
-//   custom   your own provider, without Aelios (start wrangler with --var AELIOS_URL:)
+//   no-model without Aelios or a box (start wrangler with --var AELIOS_URL:)
 //   mcp      other MCP servers: open, with a key, with a sign-in, and connected from the chat
 //   mcp-2    run after mcp and restart.sh: the connections come back
 //   stickers sticker packs: imported from a zip and from Telegram, sent, drawn, shown on the web page
@@ -842,63 +842,25 @@ if (phase === "migrate") {
   });
 }
 
-if (phase === "custom") {
+if (phase === "no-model") {
   await fetch(`${MOCK}/__reset`);
-  await step("a provider of your own (custom/…, OpenAI format) is tried, picked and answers with your key", async () => {
-    let response = await web("/web/model", "test-web-key", { text: "custom/nous/claude-test" });
-    const picked = await response.json();
-    assert.equal(response.status, 200, JSON.stringify(picked));
-    assert.equal(picked.model, "custom/nous/claude-test");
-    const before = (await sent()).length;
-    await post("自己的供应商在吗");
-    const [out] = await waitForSends(before, 1);
-    assert.match(out, /^自己的供应商（OpenAI 格式）收到：\[[^\]]+\] 自己的供应商在吗$/);
-    const calls = (await log()).filter((e) => e.kind === "custom.chat");
-    assert.equal(calls.length, 2, "the trial call and the turn");
-    assert.equal(calls[1].auth, "Bearer test-custom-key");
-    assert.equal(calls[1].body.model, "nous/claude-test");
-    assert.equal(calls[1].body.stream, true);
+  await step("a provider of your own (custom/…) is refused, with nothing called", async () => {
+    const response = await web("/web/model", "test-web-key", { text: "custom/nous/claude-test" });
+    assert.equal(response.status, 400, "refused");
+    assert.match((await response.json()).error, /no longer supported/);
+    assert.equal((await log()).filter((e) => e.kind.startsWith("custom")).length, 0);
+  });
+
+  await step("without Aelios or a box a model is not accepted, and says why in one line", async () => {
+    const response = await web("/web/model", "test-web-key", { text: "anthropic/claude-opus-5-5" });
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /No model is set up: connect Aelios/);
   });
 
   await step("without Aelios the picker is told to keep to its own catalog", async () => {
     const list = await (await web("/web/models", "test-web-key")).json();
     assert.deepEqual(list, { aelios: false, models: [], curated: false });
     assert.equal((await log()).filter((e) => e.kind === "aelios.models").length, 0, "nothing is asked of an Aelios that is not connected");
-  });
-
-  await step("the format is changed on the settings page and applies from the next message", async () => {
-    const config = await (await web("/web/config", "test-web-key", { key: "CUSTOM_FORMAT", text: "Anthropic" })).json();
-    assert.equal(config.fields.find((f) => f.key === "CUSTOM_FORMAT").value, "anthropic");
-  });
-
-  await step("a provider of your own on the Messages API: your key, the cache marker, no thinking from earlier turns", async () => {
-    await fetch(`${MOCK}/__reset`);
-    const response = await web("/web/model", "test-web-key", { text: "custom/claude-test" });
-    assert.equal(response.status, 200, JSON.stringify(await response.json()));
-    let before = (await sent()).length;
-    await post("第一句");
-    const [first] = await waitForSends(before, 1);
-    const count = Number(first.match(/^自己的供应商（Anthropic 格式）收到 (\d+) 条，缓存标记有，旧思考块 0 个$/)?.[1]);
-    assert.ok(count > 0, first);
-    before = (await sent()).length;
-    await post("第二句");
-    assert.deepEqual(await waitForSends(before, 1), [`自己的供应商（Anthropic 格式）收到 ${count + 2} 条，缓存标记有，旧思考块 0 个`]);
-    const calls = (await log()).filter((e) => e.kind === "custom.messages");
-    assert.equal(calls.at(-1).apiKey, "test-custom-key");
-    assert.equal(calls.at(-1).body.model, "claude-test");
-    // The first answer went back without its thinking, its words kept.
-    const earlier = calls.at(-1).body.messages.at(-2);
-    assert.equal(earlier.role, "assistant");
-    assert.ok(earlier.content.some((b) => b.type === "text"), JSON.stringify(earlier));
-    // THINKING_EFFORT applies here too.
-    await web("/web/config", "test-web-key", { key: "THINKING_EFFORT", text: "xhigh" });
-    assert.equal((await web("/web/model", "test-web-key", { text: "custom/claude-sonnet-5-5" })).status, 200);
-    before = (await sent()).length;
-    await post("第三句");
-    await waitForSends(before, 1);
-    const turn = (await log()).filter((e) => e.kind === "custom.messages").at(-1);
-    assert.deepEqual(turn.body.thinking, { type: "adaptive", display: "summarized" });
-    assert.deepEqual(turn.body.output_config, { effort: "xhigh" });
   });
 }
 

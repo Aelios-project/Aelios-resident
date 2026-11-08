@@ -50,8 +50,6 @@
    | 用户的情况 | 怎么走 |
    |---|---|
    | 接了 Aelios | 模型的 key 存在 Aelios 用的 AI Gateway 里（Aelios 说明第 4 步）。住户这边只选模型名，这个模型要在 Aelios 给住户的身份的主模型里（第 6 步） |
-   | 没接 Aelios，有 Anthropic 或别家的 API key | 用户把 key 存进 AI Gateway `default` 的 Provider Keys（第 7 步），模型选 `anthropic/claude-…` 这类 |
-   | 没接 Aelios，有中转站的地址和 key | 用户在设置页「供应商」里填中转地址和 key，模型写 `custom/<那家的模型名>`（第 7 步） |
    | 什么 key 都没有 | 先用默认的 `@cf/zai-org/glm-4.7-flash`，免费档就能用，以后再换 |
    | 只有 Claude 订阅（Pro、Max），没有 API key | 能用订阅聊：模型写 `claude-code/claude-opus-5-5` 这类，但要一台机器装 Claude 盒子（[claude-box.md](claude-box.md)，Google Cloud 免费小机就行）。先用免费模型装好、能聊了，再照那份装盒子、换模型。 |
 
@@ -232,10 +230,7 @@ curl -s <住户地址>/web/check -H "x-web-key: <网页钥匙>"
 
 ## 7. 选模型
 
-**用自己的 key、又没接 Aelios 的**，先让用户存 key（接了 Aelios 的，key 在 Aelios 那边已经存好了，跳过这段）：
-
-- 厂商的 key（Anthropic、OpenAI、DeepSeek 等）：这一步用户在 Cloudflare 后台自己点，你别碰 key。把这个链接给用户：<https://dash.cloudflare.com/?to=/:account/ai/ai-gateway>，告诉用户：进 `default`（没有就先建一个叫 `default` 的）→ **Provider Keys** → **Add API Key**，选厂商、粘贴 key，别名填 `default`，保存。
-- 中转站：请用户打开网页门 →「···」→「供应商」，自己填中转地址（写到 `/v1` 为止）和 key；那家说的是 Anthropic 的格式，就把格式选 `anthropic`。
+模型只有两条路：从 Aelios 过（key 在 Aelios 那边配好），或者盒子（`claude-code/…`、`kiro/…`）。没接 Aelios、也没装盒子，住户聊不了天，先回上面接 Aelios。
 
 然后换模型。住户会先拿这个模型试一句，调不通就不换，报错里写着为什么：
 
@@ -244,13 +239,11 @@ curl -sS -X POST <住户地址>/web/model -H "x-web-key: <网页钥匙>" -H "con
   -d '{"text":"anthropic/claude-sonnet-4.6"}'
 ```
 
-返回里 `"model"` 是你填的名字就换好了。模型名：接了 Aelios 就用 Aelios 那边模型清单里的名字（`GET <Aelios 地址>/<身份>/v1/models`，或网页门选模型弹出来的那份；Anthropic 的版本号用横杠）；没接就照仓库里 `public/models.json` 的 `id` 写（Cloudflare 的写法，版本号用点），中转的写 `custom/<那家的模型名>`。Anthropic 的名字点和横杠两种写法住户都认，发给 Aelios 前会改成横杠。用户什么 key 都没有就不用换，留空就是免费的 `@cf/zai-org/glm-4.7-flash`。
+返回里 `"model"` 是你填的名字就换好了。模型名：接了 Aelios 就用 Aelios 那边模型清单里的名字（`GET <Aelios 地址>/<身份>/v1/models`，或网页门选模型弹出来的那份；Anthropic 的版本号用横杠）。Anthropic 的名字点和横杠两种写法住户都认，发给 Aelios 前会改成横杠。不换的话，留空就是默认的 `@cf/zai-org/glm-4.7-flash`，也从 Aelios 过。
 
 常见报错：
 
 - **「在 Aelios 里不是这个身份的主模型」**：第 6 步身份的 `models` 对不上这个模型，改通配符。
-- **Unified billing unavailable**：Cloudflare 没找到用户存的 key。多半是存错了 Gateway（住户找的是设置里「AI Gateway 的名字」那个，留空就是 `default`；接了 Aelios 的是 Aelios 用的那个）、别名不是 `default`，或者厂商选错了。
-- **Unknown gateway provider**：AI Gateway 后台建的自定义 provider（`custom-xxx/…`）住户不认，改走设置页「供应商」的中转，模型写 `custom/…`。
 
 ## 8. 人设
 

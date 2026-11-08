@@ -70,7 +70,7 @@ import {
 import { claudeOnRunPath } from "./claude-run";
 import { boxAddress, cleaned, describe, fieldOf, withSaved, type ConfigField } from "./config";
 import { DEFAULT_RESIDENT, RESIDENTS_MAX, residentEnv, residentIdProblem, residentPage, residentPrefix } from "./residents";
-import { customModel, isCustom } from "./custom";
+import { isRemovedModel, noModel } from "./no-model";
 import { LETTER_KEEP_TOKENS, chatTokens, foldIntoLetter, letterTokenThreshold, reachesLetterThreshold } from "./fold";
 import { resumeLetterCompaction } from "./letter-recovery";
 import { LetterStateStore, type WriteState } from "./letter-state";
@@ -294,15 +294,6 @@ function idleMinutes(env: Env): number {
   return ttl === 5 ? 4 : 55;
 }
 
-/** What to do about the two errors you get when Cloudflare's own billing cannot serve a model. */
-function hintFor(reason: string): string {
-  if (/unified billing/i.test(reason)) {
-    return "（可以在这个 AI Gateway 的 Provider Keys 里存你自己的 key，别名 default，就不走 Cloudflare 的统一计费；或者在设置页「供应商」里填中转地址，模型填 custom/…）";
-  }
-  if (/unknown gateway provider/i.test(reason)) return "（中转请填 custom/模型名，并在设置页「供应商」里填好中转地址和 key）";
-  return "";
-}
-
 function num(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -421,6 +412,8 @@ export type WebModel = {
   recent: string[];
   lastUsage: LastUsage | null;
   memoryOff: boolean;
+  /** An old saved choice that is no longer available (a custom provider's model): the default stands, the page says so. */
+  removed: string;
 };
 
 /** The models the picker offers when Aelios is connected: its own list (via-aelios.ts listModels). */
@@ -732,7 +725,8 @@ export class Resident extends Think<Env> {
   /** The model picked on the web page, or "" for the default. */
   private savedModel(): string {
     const saved = this.settings("model");
-    if (saved) return saved.value;
+    // A removed provider's model (custom/…) stays stored but is not used: the default stands.
+    if (saved) return isRemovedModel(saved.value) ? "" : saved.value;
     // The model used to be the MODEL variable: carry it over once, so the switch does not drop back to the default.
     const old = this.env.MODEL?.trim();
     if (old) this.saveSetting("model", old);
@@ -745,8 +739,8 @@ export class Resident extends Think<Env> {
   }
 
   /**
-   * The model the conversation runs on. With Aelios connected it goes out through Aelios, which recalls and
-   * records (via-aelios.ts); without, as the id says (Workers AI, AI Gateway, or your own provider).
+   * The model the conversation runs on: a box (claude-code/…, kiro/…), or Aelios, which recalls and records
+   * (via-aelios.ts). With neither set up it fails with NO_MODEL.
    * `thinking: false` for work outside the conversation, which keeps the model's own way of thinking.
    */
   private chatModel(id: string, { auxiliary = false, thinking: asked = true } = {}): ThinkModel {
@@ -756,7 +750,7 @@ export class Resident extends Think<Env> {
     if (isClaudeCode(id)) return this.claudeCode(id, { auxiliary, thinking });
     if (isKiro(id)) return this.kiro(id, auxiliary);
     const memory = aeliosConfig(this.cfg);
-    if (!memory) return this.modelFor(id, thinking);
+    if (!memory) return noModel();
     // What Aelios did about memory on her turn, kept so the web page and /status can say when it is off.
     const report = (status: string) => {
       this.ctx.waitUntil(this.ctx.storage.put("aelios_memory", { status, model: id, at: Date.now() }));
@@ -883,15 +877,6 @@ export class Resident extends Think<Env> {
     return last?.status === "off" && last.model === (this.savedModel() || this.defaultModel);
   }
 
-  /** A model id as Think takes it, called from here: your own provider's `custom/…` is built here (custom.ts). */
-  private modelFor(id: string, thinking?: Thinking): ThinkModel {
-    if (isCustom(id)) return customModel(this.cfg, id, thinking);
-    // Called here only for work outside the conversation (the conversation's own model is chatModel's).
-    if (isClaudeCode(id)) return this.claudeCode(id, { auxiliary: true, thinking });
-    if (isKiro(id)) return this.kiro(id, true);
-    return id === "fake" && this.env.FAKE_MODEL === "true" ? fakeModel() : id;
-  }
-
   /** Small settings written on the web page (the model, the recently used ones), one row per key. */
   private settings(key: string): { value: string; at: number } | undefined {
     this.sql`CREATE TABLE IF NOT EXISTS res_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, at INTEGER NOT NULL)`;
@@ -902,11 +887,6 @@ export class Resident extends Think<Env> {
     this.settings(key);
     this.sql`INSERT INTO res_settings (key, value, at) VALUES (${key}, ${value}, ${Date.now()})
       ON CONFLICT (key) DO UPDATE SET value = excluded.value, at = excluded.at`;
-  }
-
-  override getGateway() {
-    const id = this.cfg.AI_GATEWAY_ID?.trim();
-    return id ? { id } : undefined;
   }
 
   // Claude on Cloudflare's run path: `system` as one string, no thinking from earlier turns (see claude-run.ts).
@@ -1574,14 +1554,12 @@ export class Resident extends Think<Env> {
   }
 
   /**
-   * The threads' model as something to call. A Workers AI id runs on Cloudflare here; any other goes through
-   * Aelios when it is connected (marked auxiliary, so nothing is recorded), else as the id says.
+   * The threads' model as something to call: through Aelios (marked auxiliary, so nothing is recorded) or a box.
    */
   private threadModelToCall(task?: Task) {
     const name = this.threadModel(task);
     if (name === "fake" && this.env.FAKE_MODEL === "true") return { name, model: fakeModel() };
-    const viaAelios = Boolean(aeliosConfig(this.cfg)) && !name.startsWith("@cf/");
-    return { name, model: this.resolveModel(viaAelios ? this.chatModel(name, { auxiliary: true, thinking: false }) : this.modelFor(name)) };
+    return { name, model: this.resolveModel(this.chatModel(name, { auxiliary: true, thinking: false })) };
   }
 
   /**
@@ -1959,9 +1937,7 @@ export class Resident extends Think<Env> {
     })));
     const model = this.threadModel(task);
     return {
-      // A Workers AI model runs on Cloudflare, not through Aelios.
-      model, memory: model.startsWith("@cf/") ? null : aeliosConfig(this.cfg), gatewayId: this.cfg.AI_GATEWAY_ID?.trim() ?? "",
-      custom: { CUSTOM_BASE_URL: this.cfg.CUSTOM_BASE_URL, CUSTOM_API_KEY: this.cfg.CUSTOM_API_KEY, CUSTOM_FORMAT: this.cfg.CUSTOM_FORMAT },
+      model, memory: aeliosConfig(this.cfg),
       tools: descriptors
     };
   }
@@ -2638,16 +2614,16 @@ export class Resident extends Think<Env> {
   /**
    * The model web_fetch shrinks long pages with: WEB_FETCH_MODEL, any id the model picker takes. A Workers AI id
    * runs on Cloudflare here; any other goes through Aelios when it is connected (marked auxiliary, so nothing is
-   * recorded), else through AI Gateway. Null when it is "off" or cannot be used.
+   * recorded). Null when it is "off" or cannot be used.
    */
   private compressor(kind: "compress" | "learn" | "file" = "compress"): Compressor | null {
     const name = this.cfg.WEB_FETCH_MODEL?.trim() || DEFAULT_COMPRESS_MODEL;
-    const viaAelios = Boolean(aeliosConfig(this.cfg)) && !name.startsWith("@cf/");
-    if (name.toLowerCase() === "off" || (!this.env.AI && !viaAelios && !isCustom(name))) return null;
+    const onWorkersAi = name.startsWith("@cf/");
+    if (name.toLowerCase() === "off" || (onWorkersAi ? !this.env.AI : !aeliosConfig(this.cfg))) return null;
     try {
       return {
         name,
-        model: this.resolveModel(viaAelios ? this.chatModel(name, { auxiliary: true, thinking: false }) : this.modelFor(name)),
+        model: this.resolveModel(onWorkersAi ? name : this.chatModel(name, { auxiliary: true, thinking: false })),
         onStep: (step) => this.recordUsage(step, { kind, via: "" })
       };
     } catch (error) {
@@ -4498,8 +4474,10 @@ export class Resident extends Think<Env> {
   async webModel(): Promise<WebModel> {
     this.savedModel();
     const saved = this.settings("model");
+    const removed = saved && isRemovedModel(saved.value) ? saved.value : "";
     return {
-      model: saved?.value ?? "",
+      model: removed ? "" : (saved?.value ?? ""),
+      removed,
       at: saved?.at ?? null,
       fallback: this.defaultModel,
       // kiro/auto is offered as a suggestion once the Kiro API key is set.
@@ -4541,6 +4519,7 @@ export class Resident extends Think<Env> {
    */
   async webSetModel(id: string): Promise<WebModel | { error: string }> {
     const model = id.trim();
+    if (isRemovedModel(model)) return { error: "Your own provider (custom/…) is no longer supported: pick a model from the Aelios list, or a Claude or Kiro box model." };
     if (model) {
       try {
         const result = await generateText({
@@ -4558,7 +4537,7 @@ export class Resident extends Think<Env> {
         }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        return { error: `这个模型用不了：${reason.slice(0, 300)}${hintFor(reason)}` };
+        return { error: `这个模型用不了：${reason.slice(0, 300)}` };
       }
     }
     const before = this.savedModel();

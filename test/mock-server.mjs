@@ -439,8 +439,8 @@ const server = http.createServer(async (req, res) => {
       }
     });
   }
-  // Models: a provider of your own (custom/…), and Aelios' model endpoint (/v1/… or /<identity>/v1/…).
-  // Both answer OpenAI chat completions and Anthropic messages with a line saying what they got.
+  // Models: Aelios' model endpoint (/v1/… or /<identity>/v1/…).
+  // It answers OpenAI chat completions and Anthropic messages with a line saying what they got.
   const textOf = (content) => (typeof content === "string" ? content : (content ?? []).find((p) => p.type === "text")?.text ?? "");
   const sse = (events, headers = {}) => {
     res.writeHead(200, { "content-type": "text/event-stream", ...headers });
@@ -565,14 +565,6 @@ const server = http.createServer(async (req, res) => {
       reply: content.map((block) => ({ type: "assistant", uuid: uuid(), message: { id, type: "message", role: "assistant", model: json.model, content: [block] } }))
     } });
     return res.end();
-  }
-  if (url.pathname === "/custom/v1/chat/completions") {
-    log.push({ kind: "custom.chat", auth: req.headers.authorization, body: json });
-    return chat(`自己的供应商（OpenAI 格式）收到：${said()}`);
-  }
-  if (url.pathname === "/custom/v1/messages") {
-    log.push({ kind: "custom.messages", apiKey: req.headers["x-api-key"], body: json });
-    return messages(`自己的供应商（Anthropic 格式）收到 ${json.messages.length} 条，缓存标记${cached()}，旧思考块 ${thinkingCount()} 个`);
   }
   // Aelios' model list (what the web page's picker browses): a saved list, entries saying whether they get memory.
   const listed = url.pathname.match(/^(?:\/([^/]+))?\/v1\/models$/);

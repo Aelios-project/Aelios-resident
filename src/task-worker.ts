@@ -8,12 +8,12 @@ import type { StepLike } from "./usage";
 import { Resident } from "./resident";
 import { LOCAL_TASK_OUTPUT, LOCAL_TASK_STEPS, LOCAL_TASK_SYSTEM, extractHttpsLinks, localStepProgress } from "./cloud-tasks";
 import { aeliosModel } from "./via-aelios";
-import { customModel, isCustom } from "./custom";
+import { noModel } from "./no-model";
 import { fakeModel } from "./fake-model";
 import { claudeOnRunPath } from "./claude-run";
 
 type TaskParent = {
-  taskWorkerConfig(id: string, code: string): Promise<{ model: string; memory: AeliosConfig | null; gatewayId: string; custom: Partial<Env>; tools: { name: string; description: string; schema: JSONSchema7 }[] }>;
+  taskWorkerConfig(id: string, code: string): Promise<{ model: string; memory: AeliosConfig | null; tools: { name: string; description: string; schema: JSONSchema7 }[] }>;
   taskWorkerTool(id: string, code: string, name: string, input: unknown): Promise<unknown>;
   taskWorkerUsage(id: string, code: string, step: StepLike): Promise<void>;
   taskReport(id: string, code: string, kind: "progress" | "result", body: unknown): Promise<unknown>;
@@ -45,10 +45,8 @@ const FINISHED = ["completed", "error", "aborted", "skipped"];
 type Part = { type: string; text?: string; toolName?: string; input?: unknown };
 
 export class TaskWorker extends Think<Env> {
-  private gatewayId = "";
   override getModel(): string { throw new Error("Task model is supplied by the parent at turn admission"); }
   override getSystemPrompt(): string { return LOCAL_TASK_SYSTEM; }
-  override getGateway() { return this.gatewayId ? { id: this.gatewayId } : undefined; }
   override getAIBinding(): Ai { return claudeOnRunPath(super.getAIBinding()); }
 
   async enqueue(job: { id: string; code: string; brief: string }) {
@@ -69,10 +67,9 @@ export class TaskWorker extends Think<Env> {
     const job = await this.currentJob(ctx.requestId);
     const parent = await this.parentAgent(Resident) as unknown as TaskParent;
     const config = await parent.taskWorkerConfig(job.id, job.code);
-    this.gatewayId = config.gatewayId;
     const model = config.model === "fake" && this.env.FAKE_MODEL === "true" ? fakeModel()
       : config.memory ? aeliosModel(config.memory, config.model, { auxiliary: true })
-      : isCustom(config.model) ? customModel(config.custom as Env, config.model) : config.model;
+      : noModel();
     const tools: ToolSet = {};
     for (const descriptor of config.tools) {
       tools[descriptor.name] = dynamicTool({
