@@ -1455,7 +1455,7 @@ export class Resident extends Think<Env> {
     return this.#waitingStore;
   }
   webWaiting() { return this.waiting().list(); }
-  webWaitingRead(id: string | null) { this.waiting().read(id); return this.waiting().list(); }
+  webWaitingRead(thread: string | null) { this.waiting().read(thread); return this.waiting().list(); }
 
   /** Each new ask is pushed once, if push is on. Nothing is written into the conversation. */
   private async pushWaitingAsks(): Promise<void> {

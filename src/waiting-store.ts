@@ -11,8 +11,7 @@ export class WaitingStore {
     sql`CREATE TABLE IF NOT EXISTS res_waiting_seen (id TEXT PRIMARY KEY, at INTEGER NOT NULL)`;
   }
 
-  /** The list, and how many asks are open in it. */
-  list(now = Date.now()): { items: WaitingItem[]; open: number } {
+  #built(now: number) {
     this.sql`DELETE FROM res_waiting_seen WHERE at < ${now - ITEM_DROPPED_MS}`;
     const threads = this.tasks.threads(THREADS_LOOKED_AT).flatMap((card) => {
       const task = this.tasks.latest(card.id);
@@ -21,23 +20,29 @@ export class WaitingStore {
         : [];
     });
     const seen = new Set(this.sql<{ id: string }>`SELECT id FROM res_waiting_seen`.map((row) => row.id));
-    const items = build({ asks: this.machines.allAsks(), notes: this.machines.notes(), threads, seen, now });
-    return { items, open: items.filter((item) => item.kind === "ask" && !item.expired).length };
+    return build({ asks: this.machines.allAsks(), notes: this.machines.notes(), threads, seen, now });
   }
 
-  /** The owner read one item, or all of the ones that need no answer. */
-  read(id: string | null): void {
+  /** What needs the owner, how many asks are open, and the unread news per thread. */
+  list(now = Date.now()): { items: WaitingItem[]; open: number; unread: Record<string, number> } {
+    const { items, news } = this.#built(now);
+    const unread: Record<string, number> = {};
+    for (const item of news) unread[item.thread] = (unread[item.thread] ?? 0) + 1;
+    return { items, open: items.filter((item) => item.kind === "ask").length, unread };
+  }
+
+  /** The owner opened a thread (or null: read everything): its news counts as read. */
+  read(thread: string | null): void {
     const now = Date.now();
-    for (const item of this.list(now).items) {
-      if (item.kind !== "ask" && (id === null || item.id === id)) this.sql`INSERT OR REPLACE INTO res_waiting_seen VALUES (${item.id}, ${now})`;
-    }
+    const { news } = this.#built(now);
+    for (const item of news) if (thread === null || item.thread === thread) this.sql`INSERT OR REPLACE INTO res_waiting_seen VALUES (${item.id}, ${now})`;
   }
 
   /** The pushes still to send: each open ask once. */
   unpushed(): { body: string; tag: string }[] {
     const out: { body: string; tag: string }[] = [];
     for (const item of this.list().items) {
-      if (item.kind !== "ask" || item.expired) continue;
+      if (item.kind !== "ask") continue;
       const mark = `push:${item.id}`;
       if (this.sql`SELECT 1 FROM res_waiting_seen WHERE id = ${mark}`.length) continue;
       this.sql`INSERT INTO res_waiting_seen VALUES (${mark}, ${Date.now()})`;
