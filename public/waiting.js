@@ -1,14 +1,14 @@
-// The waiting list on the 线程 page (src/waiting.ts): what needs them, or has news, in one fixed format. It is read from
-// its own endpoint and never touches the conversation. app.js mixes this into the page's state, so no name here may be
+// The waiting list on the 线程 page (src/waiting.ts): only what needs their decision or action, in one fixed format; news (a thread
+// finished, a note) is an unread count on the thread's row instead. It is read from its own endpoint and never touches the conversation. app.js mixes this into the page's state, so no name here may be
 // one app.js already has (app.js has waiting(), the typing dots).
 function waitingPage() {
   return {
-    waitList: { items: [], open: 0 },
+    waitList: { items: [], open: 0, unread: {} },
     async loadWaiting() {
       try { this.waitList = await this.api('/web/waiting'); } catch (error) { /* the threads below still work */ }
     },
     waitingKind(item) {
-      return { ask: '等你', note: '进展', done: '做完了', stuck: '卡住了' }[item.kind] + (item.expired ? ' · 过期了' : '');
+      return item.kind === 'ask' ? '等你' : '卡住了';
     },
     // An option goes the way a choice on a thread's card goes.
     async waitingAnswer(item, option) {
@@ -20,12 +20,17 @@ function waitingPage() {
       } catch (error) { this.notify(error.message); }
       this.choosing = '';
     },
-    async waitingRead(item) {
-      try { this.waitList = await this.api('/web/waiting/seen', { method: 'POST', body: item ? { id: item.id } : { all: true } }); } catch (error) { this.notify(error.message); }
+    // Opening a thread reads its news.
+    async waitingRead(threadId) {
+      if (!this.waitList.unread || !this.waitList.unread[threadId]) return;
+      try { this.waitList = await this.api('/web/waiting/seen', { method: 'POST', body: { id: threadId } }); } catch (error) { /* the dot stays */ }
     },
-    waitingOpen(item) {
-      if (item.kind !== 'ask') this.waitingRead(item);
-      return this.openThread(item.thread);
+    unreadOf(threadId) {
+      return (this.waitList.unread && this.waitList.unread[threadId]) || 0;
+    },
+    // The one button on a stuck item: the settings page, or the thread (where a permission is given).
+    waitingAct(item) {
+      return item.action === 'settings' ? this.openSettings() : this.openThread(item.thread);
     },
     async stopThread() {
       if (this.threadBusy) return;

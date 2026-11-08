@@ -23,12 +23,14 @@ export type WorkKind = (typeof KINDS)[number];
 const ID = /^[A-Za-z0-9_.:-]{1,64}$/;
 const SESSION = /^[A-Za-z0-9_.:-]{1,160}$/;
 const KEY = /^.{1,200}$/s;
+/** Why a failed turn failed, as the runner knows it (PROTOCOL.md). Only a failed final may carry one. */
+export const FAIL_REASONS = ["permission_denied", "needs_login", "missing_key", "helper_missing", "workspace_denied", "error"] as const;
 
 type Machine = { id: string; token_hash: string; label: string; created_at: number; last_seen_at: number | null; revoked_at: number | null };
 type Work = { work_id: string; machine_id: string; token: string; task_id: string; thread: string; kind: WorkKind; text: string; state: string; claim_key: string; lease_until: number | null; created_at: number; files: string };
 type Status = "done" | "failed" | "needs_you" | "cancelled";
 export type Ask = { key: string; question: string; options: string[]; recommend: string };
-type Receipt = { receiptId: string; workId: string; token: string; type: "started" | "queued" | "final"; sessionId: string; status?: Status; summary?: string; ask?: Ask; notice?: { text: string; fyi: boolean }; resolve: string[] };
+type Receipt = { receiptId: string; workId: string; token: string; type: "started" | "queued" | "final"; sessionId: string; status?: Status; summary?: string; reason?: string; ask?: Ask; notice?: { text: string; fyi: boolean }; resolve: string[] };
 
 export class MachineError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
@@ -86,7 +88,7 @@ export async function machineReply(operation: () => unknown): Promise<{ status: 
 
 function receiptOf(input: unknown): Receipt {
   const body = object(input);
-  const allowed = ["receiptId", "workId", "token", "type", "sessionId", "status", "summary", "ask", "notice", "resolve"];
+  const allowed = ["receiptId", "workId", "token", "type", "sessionId", "status", "summary", "reason", "ask", "notice", "resolve"];
   if (Object.keys(body).some((key) => !allowed.includes(key))) fail(400, "INVALID_RECEIPT", "the receipt has a field the protocol does not name");
   const { receiptId, workId, token, type } = body;
   if (typeof workId !== "string" || !ID.test(workId) || typeof token !== "string" || !token || token.length > 200) fail(400, "INVALID_RECEIPT", "workId or token is not valid");
@@ -103,6 +105,10 @@ function receiptOf(input: unknown): Receipt {
   if (!summary || summary.length > SUMMARY_MAX) fail(400, "INVALID_RECEIPT", `summary is 1 to ${SUMMARY_MAX} characters`);
   receipt.status = body.status as Status;
   receipt.summary = summary;
+  if (body.reason !== undefined) {
+    if (receipt.status !== "failed" || !FAIL_REASONS.includes(body.reason as never)) fail(400, "INVALID_RECEIPT", `reason is one of ${FAIL_REASONS.join(", ")}, and only a failed final has one`);
+    receipt.reason = body.reason as string;
+  }
   if (body.ask !== undefined) {
     const ask = object(body.ask);
     const options = Array.isArray(ask.options) ? ask.options : [];
@@ -322,7 +328,7 @@ export class MachineStore {
     const task = this.tasks.get(work.task_id);
     if (!task) return undefined;
     const summary = receipt.status === "needs_you" && receipt.ask && !receipt.summary!.includes(receipt.ask.question) ? `${receipt.summary}\n\n${receipt.ask.question}` : receipt.summary!;
-    this.tasks.result(task.id, { status, summary: summary.slice(0, SUMMARY_MAX), links: [], choices: receipt.ask?.options ?? [] });
+    this.tasks.result(task.id, { status, summary: summary.slice(0, SUMMARY_MAX), links: [], choices: receipt.ask?.options ?? [], reason: receipt.reason });
     return { task: this.tasks.get(task.id)!, status };
   }
 

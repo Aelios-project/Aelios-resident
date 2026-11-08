@@ -725,3 +725,5 @@ details > summary { cursor: pointer; font-size: 13px; color: var(--text-3); }
 .docs { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 12px 0; }
 .docs .doc { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; overflow-wrap: anywhere; }
 .docs .doc button { border: 0; background: none; color: inherit; font-size: 16px; line-height: 1; padding: 0 2px; }
+/* unread news count on a thread row (waiting.js) */
+.unread { flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 11px; line-height: 18px; text-align: center; }

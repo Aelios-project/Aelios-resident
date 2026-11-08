@@ -228,3 +228,18 @@ await test("the heartbeat renames the machine, refuses unknown fields; files rid
   await assert.rejects(f.store.workFile(f.token, { workId: work.workId, key: "b".repeat(32) }), code(404, "UNKNOWN_FILE"));
   await assert.rejects(f.store.workFile(f.token, { workId: "w_other", key }), code(404, "UNKNOWN_FILE"));
 });
+
+await test("a failed final may carry a reason code, stored on the task; any other final with one, or an unknown code, is refused", async () => {
+  const f = await paired();
+  const task = f.add("job");
+  const { work } = await f.store.poll(f.token, { claimKey: "ck_reasons1" });
+  await assert.rejects(f.store.receipt(f.token, final(work, { status: "failed", reason: "because" })), code(400, "INVALID_RECEIPT"));
+  await assert.rejects(f.store.receipt(f.token, final(work, { status: "done", reason: "error" })), code(400, "INVALID_RECEIPT"));
+  await f.store.receipt(f.token, final(work, { status: "failed", summary: "Not signed in.", reason: "needs_login" }));
+  assert.equal(f.tasks.get(task.id).status, "failed");
+  assert.equal(f.tasks.get(task.id).reason, "needs_login");
+  const again = f.add("job");
+  const { work: next } = await f.store.poll(f.token, { claimKey: "ck_reasons2" });
+  await f.store.receipt(f.token, final(next, { status: "failed", summary: "Broke." }));
+  assert.equal(f.tasks.get(again.id).reason, "", "an old runner sends none");
+});

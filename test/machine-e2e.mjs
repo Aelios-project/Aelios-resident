@@ -154,15 +154,19 @@ try {
     const waitingList = async () => (await web("/web/waiting")).data;
     const noted = await send("机器派活 NOTEME 看看");
     await until(async () => (await threadOf(noted.id)).status === "done", "the note job done");
-    const items = (await waitingList()).items.filter((i) => i.thread === noted.id);
-    assert.deepEqual(items.map((i) => [i.kind, i.line]).sort(), [["done", "Working on it."], ["note", "found two config files"]]);
+    // News is not on the list: it is an unread count on the thread, and opening the thread clears it (done + note = 2).
+    assert.deepEqual((await waitingList()).items.filter((i) => i.thread === noted.id), []);
+    assert.equal((await waitingList()).unread[noted.id], 2);
+    assert.equal((await web("/web/waiting/seen", { id: noted.id })).status, 200);
+    assert.equal((await waitingList()).unread[noted.id], undefined, "opening the thread cleared its unread");
     const blocked = await send("机器派活 BLOCKME 取回来");
     await until(async () => (await threadOf(blocked.id)).status === "failed", "the blocked job");
-    const stuck = (await waitingList()).items.find((i) => i.thread === blocked.id);
-    assert.deepEqual([stuck.kind, stuck.line], ["stuck", "Blocked: no network from this machine"]);
+    assert.ok(!(await waitingList()).items.some((i) => i.thread === blocked.id), "a failure the owner can do nothing about is only the thread's status");
     const asked = await send("机器派活 ASKME 再选");
     await until(async () => (await waitingList()).items.some((i) => i.thread === asked.id && i.kind === "ask"), "the ask in the list");
-    assert.equal((await waitingList()).open, 1);
+    const listed = await waitingList();
+    assert.equal(listed.open, listed.items.length, "one count rule");
+    assert.equal(listed.open, 1);
     // Dispatching got the resident's own replies; from here on, answers and reads must add nothing to the conversation.
     const replies = await assistantLines();
     assert.equal((await web("/web/thread/say", { id: asked.id, text: "先做 A" })).status, 200);
