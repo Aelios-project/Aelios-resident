@@ -334,6 +334,13 @@ await step("config: the token and the helpers' keys are files only their owner c
   }
 });
 
+await step("service lifecycle: a revoked box exits 2 and systemd does not restart it", async () => {
+  const unit = readFileSync("acp-box/install.sh", "utf8");
+  assert.match(unit, /^Restart=always$/m, "it still comes back after a crash");
+  assert.match(unit, /^RestartPreventExitStatus=2$/m, "but not after a revoke");
+  assert.match(readFileSync("acp-box/main.mjs", "utf8"), /if \(revoked\) process\.exit\(2\);/, "the revoke exit code the unit relies on");
+});
+
 rmSync(dir, { recursive: true, force: true });
 if (failures) {
   console.log(`${failures} failed`);

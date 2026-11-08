@@ -85,6 +85,8 @@ EnvironmentFile=-$conf/env
 ExecStart=$node main.mjs
 Restart=always
 RestartSec=5
+# Exit code 2 means the resident revoked this box: stay stopped instead of retrying a dead token.
+RestartPreventExitStatus=2
 
 [Install]
 WantedBy=multi-user.target
