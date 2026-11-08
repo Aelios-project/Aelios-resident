@@ -145,6 +145,7 @@ import {
 } from "./cloud-tasks";
 import { WaitingStore } from "./waiting-store";
 import { MachineStore, machineRecord, machineReply, type Ask, type WorkKind } from "./machine";
+import type { Step } from "./thread-steps";
 import { TOKEN_PAGE, dispatchHands, fingerprint, setUpHands, WORKFLOW, type HandsRepo } from "./hands-repo";
 import { fromOpenAI, toOpenAI } from "./openai-chat";
 import { SENT_STICKER, stickerMarks, withoutStickerMarks } from "./sticker-marks";
@@ -385,6 +386,8 @@ export type WebThread = {
   canSay: boolean;
   /** On the machine: what the thread asks them and has not been resolved. */
   asks?: Ask[];
+  /** On the machine, while it works: the last few things it did. */
+  steps?: Step[];
 };
 
 type LetterOutcome = { status: "written" | "empty" | "failed" | "pending"; error?: string };
@@ -1436,9 +1439,9 @@ export class Resident extends Think<Env> {
   machineRegister(body: unknown, trusted: boolean) { return machineReply(() => this.machines().register(body, trusted)); }
 
   /** The runner's own calls. A final receipt leaves a record in the conversation; it does not start a turn. */
-  async machineRequest(token: string, action: "heartbeat" | "poll" | "receipt", body: unknown) {
+  async machineRequest(token: string, action: "heartbeat" | "poll" | "receipt" | "progress", body: unknown) {
     const machines = this.machines();
-    const answer = await machineReply(() => (action === "heartbeat" ? machines.heartbeat(token) : action === "poll" ? machines.poll(token, body) : machines.receipt(token, body)));
+    const answer = await machineReply(() => (action === "heartbeat" ? machines.heartbeat(token) : action === "poll" ? machines.poll(token, body) : action === "progress" ? machines.progress(token, body) : machines.receipt(token, body)));
     const finished = (answer.body as { finished?: { task: Task } }).finished;
     if (finished) {
       delete (answer.body as { finished?: unknown }).finished;
@@ -1580,6 +1583,7 @@ export class Resident extends Think<Env> {
       tz: this.tz,
       syncPrs: () => this.syncPrs(),
       threadStarted: started,
+      threadSteps: (root) => this.machines().steps.last(root, 5),
       threadFiles: async (root) => (started(root) ? (await thread(root)).listFiles().catch(() => null) : null),
       threadFile: async (root, path) => (started(root) ? (await thread(root)).fileBytes(path).catch(() => null) : null),
       chatHits: (query, before, page, skip) => this.chatHits(query, before, page, skip),
@@ -2055,9 +2059,12 @@ export class Resident extends Think<Env> {
   }
 
   /** The web page's 线程: the newest first. */
-  async webThreads(): Promise<{ on: boolean; threads: ThreadCard[] }> {
+  async webThreads(): Promise<{ on: boolean; threads: (ThreadCard & { steps?: Step[] })[] }> {
     await this.syncPrs();
-    return { on: this.cloudTasksOn(), threads: this.cloudTasks().threads() };
+    const steps = this.machines().steps;
+    // A thread at work on their machine shows what it did last (thread-steps.ts).
+    const threads = this.cloudTasks().threads().map((card) => (card.status === "working" && card.runs === "machine" ? { ...card, steps: steps.last(card.id, 3) } : card));
+    return { on: this.cloudTasksOn(), threads };
   }
 
   /** One thread: its tasks, and for a thread here, its conversation and its files. */
@@ -2125,7 +2132,8 @@ export class Resident extends Think<Env> {
       lines,
       files,
       canSay: this.cloudTasksOn() && (latest.runs === "local" || latest.runs === "machine"),
-      ...(latest.runs === "machine" ? { asks: this.machines().asks(root) } : {})
+      ...(latest.runs === "machine" ? { asks: this.machines().asks(root) } : {}),
+      ...(latest.runs === "machine" && latest.status === "working" ? { steps: this.machines().steps.last(root, 3) } : {})
     };
   }
 

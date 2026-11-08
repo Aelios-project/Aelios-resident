@@ -22,3 +22,9 @@
 /* Done threads: the name may shrink and cut off instead of pushing the status out of the row. */
 .tpage .li .name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tpage .li .val { flex: 0 1 45%; }
+
+/* What a thread on their machine is doing: its last steps, newest at the bottom, each on one line. */
+.progress { display: flex; flex-direction: column; gap: 1px; font: 12px/1.45 var(--mono); color: var(--text-3); min-width: 0; }
+.progress span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.progress span:last-child { color: var(--text-2); }
+.progress.card { padding: 10px 12px; }
