@@ -51,7 +51,7 @@
    |---|---|
    | 接了 Aelios | 模型的 key 存在 Aelios 用的 AI Gateway 里（Aelios 说明第 4 步）。住户这边只选模型名，这个模型要在 Aelios 给住户的身份的主模型里（第 6 步） |
    | 什么 key 都没有 | 先用默认的 `@cf/zai-org/glm-4.7-flash`，免费档就能用，以后再换 |
-   | 只有 Claude 订阅（Pro、Max），没有 API key | 能用订阅聊：模型写 `claude-code/claude-opus-5-5` 这类，但要一台机器装 Claude 盒子（[claude-box.md](claude-box.md)，Google Cloud 免费小机就行）。先用免费模型装好、能聊了，再照那份装盒子、换模型。 |
+   | 只有 Claude 订阅（Pro、Max），没有 API key | 能用订阅聊：模型写 `claude-code/claude-opus-5-5` 这类，但要一台机器装盒子（[claude-box.md](claude-box.md)，家里的电脑或 Google Cloud 免费小机都行；盒子自己连出来，不用 Tunnel）。先用免费模型装好、能聊了，再照那份装盒子、换模型。 |
 
 5. **要哪几扇门？** 网页门一定有。Telegram 和企业微信都是选装的：
    - 要 Telegram：问用户的 Telegram 用户名（`@` 开头），住户只回白名单里的人。用户没设用户名的话，第 9 步用日志查数字 id。

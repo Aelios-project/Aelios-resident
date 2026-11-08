@@ -1,7 +1,7 @@
 // Claude on your own subscription: `claude-code/<model>` (claude-code/claude-opus-5-5 and so on). The turn goes to
-// the Claude box, the official Claude Agent SDK signed in with the owner's `claude setup-token`, running on a small
-// machine of the owner's behind a Cloudflare Tunnel (claude-box/server.mjs, docs/claude-box.md), instead of to an
-// API. Everything else stays the resident's: Think keeps the conversation, the persona, the letters, the heartbeat
+// the Claude box, the official Claude Agent SDK signed in with the owner's `claude setup-token`, running on a
+// machine of the owner's that dials out to the resident (acp-box/, plug `claude`, docs/claude-box.md), instead of to
+// an API. Everything else stays the resident's: Think keeps the conversation, the persona, the letters, the heartbeat
 // and the tools; only the call to the model goes to the box.
 //
 // To the AI SDK this is an Anthropic model whose requests never leave the Worker but for the box: the request body
@@ -35,9 +35,7 @@ export type Segment = { fp: string; entries: unknown[] | null };
 
 /** A turn's way to the box and back, and what the resident does around it. */
 export type ClaudeCodeTurn = {
-  /** The owner's `claude setup-token`. */
-  token: string;
-  /** Sends a turn to the box (POST /turn) and answers with its NDJSON stream. */
+  /** Sends a turn to the box (its WebSocket, box-hub.ts) and answers with its NDJSON stream. The login stays on the box machine, never here. */
   send(body: string, signal?: AbortSignal): Promise<Response>;
   /** What the box holds of the conversation; none for work outside it (one call, nothing kept). */
   segments?: { load(): Segment[]; save(segments: Segment[]): void };
@@ -103,8 +101,8 @@ export function plainBlocks(role: "user" | "assistant", content: unknown): Block
   return out.length ? out : [{ type: "text", text: "…" }];
 }
 
-/** Why a turn cannot go to the box: there is none on the settings page. */
-export const NO_BOX = "还没填 Claude 盒子的地址：照 docs/claude-box.md 装好盒子，把地址和钥匙填进设置页「供应商」";
+/** Why a turn cannot go to the box: none is connected for Claude. */
+export const NO_BOX = "没有盒子连着 Claude：照 docs/claude-box.md 装好盒子并配对";
 
 /**
  * Her turn as the box gets it: text, pictures and documents as they are, without cache marks; the results of the
@@ -267,7 +265,7 @@ export async function* lines(body: ReadableStream<Uint8Array>, stop: AbortSignal
 export function boxError(message: string): { status: number; message: string } {
   const text = message.trim() || "Claude 订阅这一轮没回";
   if (/not logged in|\/login|invalid api key|oauth|authenticat|401/i.test(text)) {
-    return { status: 401, message: `Claude 订阅没登录上：setup token 不对或过期了，在电脑上跑 claude setup-token 重新拿一个，填进设置页（${text}）` };
+    return { status: 401, message: `Claude 订阅没登录上：盒子那台机器上的 setup token 不对或过期了，在电脑上跑 claude setup-token 重新拿一个，放到盒子上（${text}）` };
   }
   if (/usage limit|rate limit|429|limit reached/i.test(text)) return { status: 400, message: `Claude 订阅的额度用完了：${text}` };
   return { status: 400, message: `Claude 订阅这一轮出错：${text}` };
@@ -277,7 +275,6 @@ export function boxError(message: string): { status: number; message: string } {
 export function boxFetch(turn: ClaudeCodeTurn, thinking?: Thinking): typeof fetch {
   return async (_input, init) => {
     if (typeof init?.body !== "string") return refusal(400, "Claude 订阅只接对话");
-    if (!turn.token) return refusal(401, "还没填 Claude 订阅的 setup token：在电脑上跑 claude setup-token，把那串填进设置页「供应商」");
     const body = JSON.parse(init.body) as Record<string, unknown>;
     const model = String(body.model ?? "");
     const messages = Array.isArray(body.messages) ? (body.messages as Message[]) : [];
@@ -301,7 +298,6 @@ export function boxFetch(turn: ClaudeCodeTurn, thinking?: Thinking): typeof fetc
     const { history, kept } = await historyFor(messages.slice(0, cut), turn.segments?.load() ?? []);
     const freshFp = await fingerprint("user", fresh.flatMap((message) => blocksOf(message.content)));
     const request = {
-      token: turn.token,
       model,
       system: systemText(body.system),
       effort: thinking?.effort ?? null,
@@ -329,9 +325,7 @@ export function boxFetch(turn: ClaudeCodeTurn, thinking?: Thinking): typeof fetc
       } catch {
         // Not JSON: the text as it is.
       }
-      // No box on the settings page (501), or the wrong key, is not worth trying again; a box restarting is.
-      if (response.status === 501) return refusal(400, reason || NO_BOX);
-      if (response.status === 401) return refusal(400, "Claude 盒子不认这把钥匙：设置页「供应商」里的盒子钥匙要和装盒子时生成的那把一样");
+      // No box connected is a 503 from the hub; the turn normally falls back before it gets here (resident.ts).
       return refusal(response.status >= 500 ? 503 : 400, `Claude 盒子没接这一轮（${response.status}）：${reason.slice(0, 300)}`);
     }
     // Stops reading the box's answer: the call was aborted, or what was streamed is no longer read.

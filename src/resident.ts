@@ -40,8 +40,9 @@ import { asSchema, generateText, tool, type JSONSchema7, type ModelMessage, type
 import { z } from "zod";
 import { aeliosConfig, fetchBoot, ingest, memoryTools, pin, recall, type AeliosConfig } from "./aelios";
 import { quietAfterTools } from "./after-tools";
-import { claudeCodeModel, isClaudeCode, NO_BOX, type Segment } from "./claude-code";
-import { isKiro, kiroModel, NO_KIRO_BOX } from "./kiro-box";
+import { claudeCodeModel, isClaudeCode, type Segment } from "./claude-code";
+import { isKiro, kiroModel } from "./kiro-box";
+import { BOX_OFFLINE_NOTICE, boxOnline, boxPlugs, boxTurn } from "./box-use";
 import { cacheTtlMs, markedForLetter, opensWindow } from "./cache-window";
 import { historyAnchor, historyCutoff, historyForWindow } from "./cache-history";
 import { EffectiveHistoryError, installEffectiveHistory } from "./effective-history";
@@ -68,7 +69,7 @@ import {
   type AlarmInput
 } from "./alarms";
 import { claudeOnRunPath } from "./claude-run";
-import { boxAddress, cleaned, describe, fieldOf, withSaved, type ConfigField } from "./config";
+import { cleaned, describe, fieldOf, withSaved, type ConfigField } from "./config";
 import { DEFAULT_RESIDENT, RESIDENTS_MAX, residentEnv, residentIdProblem, residentPage, residentPrefix } from "./residents";
 import { isRemovedModel, noModel } from "./no-model";
 import { LETTER_KEEP_TOKENS, chatTokens, foldIntoLetter, letterTokenThreshold, reachesLetterThreshold } from "./fold";
@@ -714,6 +715,8 @@ export class Resident extends Think<Env> {
     this.sql`CREATE TABLE IF NOT EXISTS res_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, at INTEGER NOT NULL)`;
     // The retired claude.ai trigger: its settings have no field any more, so they are not kept.
     this.sql`DELETE FROM res_settings WHERE key IN ('env:CLOUD_TASK_URL', 'env:CLOUD_TASK_TOKEN')`;
+    // The helper keys and box addresses of the tunnel days: the box holds its own credentials now (box-hub.ts), so what was saved is deleted, not read.
+    this.sql`DELETE FROM res_settings WHERE key IN ('env:CLAUDE_CODE_OAUTH_TOKEN', 'env:CLAUDE_BOX_URL', 'env:CLAUDE_BOX_KEY', 'env:KIRO_API_KEY', 'env:KIRO_BOX_URL', 'env:KIRO_BOX_KEY')`;
     const rows = this.sql<{ key: string; value: string }>`SELECT key, value FROM res_settings WHERE key LIKE 'env:%'`;
     return Object.fromEntries(rows.map((row) => [row.key.slice(4), row.value]));
   }
@@ -768,21 +771,12 @@ export class Resident extends Think<Env> {
     return claudeCodeModel(
       id,
       {
-        token: this.cfg.CLAUDE_CODE_OAUTH_TOKEN?.trim() ?? "",
-        send: (body, signal) => this.toClaudeBox(body, signal),
+        send: (body) => boxTurn(this.env, this.residentId, "claude", body),
         ...(auxiliary ? {} : { segments: { load: () => this.claudeCodeHeld(), save: (segments) => this.holdClaudeCode(segments) } }),
         ...(memory && !auxiliary ? this.memoryHooks(memory, id) : {})
       },
       thinking
     );
-  }
-
-  /**
-   * A turn to the Claude box at the address on the settings page, with its key. Aborted, the call is cancelled: the
-   * connection to the box closes, and the box stops the turn.
-   */
-  private toClaudeBox(body: string, signal?: AbortSignal): Promise<Response> {
-    return this.toBox(this.cfg.CLAUDE_BOX_URL, this.cfg.CLAUDE_BOX_KEY, NO_BOX, body, signal);
   }
 
   /** Recall before a turn and record after it, for models that do not pass through Aelios themselves. */
@@ -803,10 +797,9 @@ export class Resident extends Think<Env> {
   private kiro(id: string, auxiliary: boolean): ThinkModel {
     const memory = aeliosConfig(this.cfg);
     return kiroModel(id, {
-      key: this.cfg.KIRO_API_KEY?.trim() ?? "",
       // The box keeps one live Kiro session for the resident's own conversation, none for work outside it.
       ...(auxiliary ? {} : { conversation: this.residentId }),
-      send: (body, signal) => this.toBox(this.cfg.KIRO_BOX_URL, this.cfg.KIRO_BOX_KEY, NO_KIRO_BOX, body, signal),
+      send: (body) => boxTurn(this.env, this.residentId, "kiro", body),
       // Kiro reports credits, not tokens: the running total is kept.
       credits: (credits) => {
         this.ctx.waitUntil(
@@ -817,19 +810,6 @@ export class Resident extends Think<Env> {
       },
       ...(memory && !auxiliary ? this.memoryHooks(memory, id) : {})
     });
-  }
-
-  /** A turn to a box at the address on the settings page, with its key. Aborted, the box stops the turn. */
-  private toBox(url: string | undefined, boxKey: string | undefined, missing: string, body: string, signal?: AbortSignal): Promise<Response> {
-    const at = url?.trim().replace(/\/+$/, "");
-    if (!at) return Promise.resolve(Response.json({ error: missing }, { status: 501 }));
-    // The settings page checks it too; this also covers an address set as a Worker variable.
-    const unsafe = boxAddress(at);
-    if (unsafe) return Promise.resolve(Response.json({ error: unsafe }, { status: 501 }));
-    const key = boxKey?.trim();
-    const headers: Record<string, string> = { "content-type": "application/json", ...(key ? { authorization: `Bearer ${key}` } : {}) };
-    // A redirect is not followed: it would take the token, the key and the conversation to another address.
-    return fetch(`${at}/turn`, { method: "POST", headers, body, signal, redirect: "manual" });
   }
 
   /** What the Claude box holds of the conversation, message by message (claude-code.ts). */
@@ -2775,6 +2755,7 @@ export class Resident extends Think<Env> {
     // Only our own tools: Think's workspace file tools would cost tokens every turn and do nothing here.
     const own = Object.keys(this.getTools());
     return {
+      ...(await this.offlineBoxModel()),
       instructions: [ctx.system, stickers, boot && `[长期记忆开机包]\n${boot}`].filter(Boolean).join("\n\n"),
       activeTools: Object.keys(ctx.tools).filter((name) => own.includes(name)),
       // Words after tools that only repeat the reply, or say there is nothing to say, never go out (after-tools.ts).
@@ -2782,6 +2763,14 @@ export class Resident extends Think<Env> {
       // A letter reuses the previous breakpoint, never placing a new marker on its auxiliary prompt.
       ...(this.#letterPromptId ? { messages: markedForLetter(messages, this.letterCache()) } : { messages, providerOptions: promptCache(this.cfg) })
     };
+  }
+
+  /** A turn whose model is served by a box that is not connected runs on the default model, and the chat says so. */
+  private async offlineBoxModel(): Promise<{ model?: ThinkModel }> {
+    const id = this.savedModel() || this.defaultModel;
+    if ((await boxOnline(this.env, this.residentId, id)) !== false) return {};
+    this.addNotice(BOX_OFFLINE_NOTICE(id));
+    return { model: this.chatModel(this.defaultModel) };
   }
 
   /** Persist only the view boundary, not another copy of private messages or media. Restarts keep the same view. */
@@ -4480,8 +4469,8 @@ export class Resident extends Think<Env> {
       removed,
       at: saved?.at ?? null,
       fallback: this.defaultModel,
-      // kiro/auto is offered as a suggestion once the Kiro API key is set.
-      recent: this.cfg.KIRO_API_KEY?.trim() && !this.recentModels().includes("kiro/auto") ? [...this.recentModels(), "kiro/auto"] : this.recentModels(),
+      // kiro/auto is offered as a suggestion once a box offers the kiro plug.
+      recent: (await boxPlugs(this.env, this.residentId)).includes("kiro") && !this.recentModels().includes("kiro/auto") ? [...this.recentModels(), "kiro/auto"] : this.recentModels(),
       lastUsage: await this.lastUsage(),
       memoryOff: await this.memoryOff()
     };

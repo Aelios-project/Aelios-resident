@@ -1,5 +1,5 @@
 // The claude-code/… models without a Worker: what goes to the Claude box and what it keeps (src/claude-code.ts),
-// and the box's own transcript handling (claude-box/transcript.mjs). Usage: node test/claude-code.mjs
+// and the box's own transcript handling (acp-box/claude/transcript.mjs). Usage: node test/claude-code.mjs
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -12,7 +12,7 @@ const out = join(dir, "claude-code.mjs");
 await build({ entryPoints: ["src/claude-code.ts"], bundle: true, platform: "node", format: "esm", outfile: out, logLevel: "error" });
 const code = await import(pathToFileURL(join(process.cwd(), out)).href);
 rmSync(dir, { recursive: true, force: true });
-const box = await import(pathToFileURL(join(process.cwd(), "claude-box/transcript.mjs")).href);
+const box = await import(pathToFileURL(join(process.cwd(), "acp-box/claude/transcript.mjs")).href);
 
 let failures = 0;
 async function step(name, fn) {
@@ -117,7 +117,6 @@ await step("a whole turn through boxFetch: her words with what memory brought up
     { type: "message_stop" }
   ];
   const turn = {
-    token: "sk-ant-oat01-x",
     async send(body) {
       sent = JSON.parse(body);
       const lines = [...events.map((e) => ({ e })), { done: { prompt: [{ type: "user", uuid: "c" }], reply: [{ type: "assistant", uuid: "d" }] } }];
@@ -145,7 +144,7 @@ await step("a whole turn through boxFetch: her words with what memory brought up
   const sse = await response.text();
   assert.match(sse, /^event: message_start\ndata: /);
   assert.equal((sse.match(/^event: /gm) ?? []).length, events.length);
-  assert.equal(sent.token, "sk-ant-oat01-x");
+  assert.ok(!("token" in sent) && !JSON.stringify(sent).includes("sk-ant"), "no login on the wire");
   assert.equal(sent.model, "claude-opus-5-5");
   assert.equal(sent.system, "人设\n\n规矩");
   assert.deepEqual(sent.tools, [{ name: "memory_recall", description: "Search.", input_schema: { type: "object", properties: {} } }], "her own tools, without cache marks or the provider's");
@@ -167,7 +166,7 @@ await step("the system's notes and work outside the conversation are not recalle
   const recorded = [];
   const answer = () => new Response(`${JSON.stringify({ e: { type: "message_start", message: { id: "m", type: "message", role: "assistant", usage: { input_tokens: 1 } } } })}\n${JSON.stringify({ e: { type: "message_stop" } })}\n${JSON.stringify({ done: { prompt: [], reply: [] } })}\n`);
   const note = "(Not from them: they have been quiet for a while.) 要不要找她？";
-  await (await code.boxFetch({ token: "t", send: async (b) => ((sent = JSON.parse(b)), answer()), segments: { load: () => [], save: (s) => (saved = s) }, recall: async () => "不该有", record: (...a) => recorded.push(a) })(
+  await (await code.boxFetch({ send: async (b) => ((sent = JSON.parse(b)), answer()), segments: { load: () => [], save: (s) => (saved = s) }, recall: async () => "不该有", record: (...a) => recorded.push(a) })(
     "u",
     { body: JSON.stringify({ model: "claude-opus-5-5", stream: true, messages: [user(text(note))] }) }
   )).text();
@@ -175,7 +174,7 @@ await step("the system's notes and work outside the conversation are not recalle
   assert.deepEqual(recorded, []);
   assert.equal(saved.length, 2, "but the conversation keeps the turn");
   // A trial call: one call, nothing kept, no thinking shown when not asked.
-  const response = await code.boxFetch({ token: "t", send: async (b) => ((sent = JSON.parse(b)), answer()) })("u", {
+  const response = await code.boxFetch({ send: async (b) => ((sent = JSON.parse(b)), answer()) })("u", {
     body: JSON.stringify({ model: "claude-opus-5-5", messages: [user(text("Reply with one word: ok"))] })
   });
   assert.equal(sent.thinking, null);
@@ -188,28 +187,21 @@ await step("the system's notes and work outside the conversation are not recalle
 await step("the box turning a turn down, or not there, is a refused call with the reason", async () => {
   const lines = (...l) => new Response(l.map((x) => `${JSON.stringify(x)}\n`).join(""));
   const call = (turn) => code.boxFetch(turn)("u", { body: JSON.stringify({ model: "claude-opus-5-5", stream: true, messages: [user(text("hi"))] }) });
-  let response = await call({ token: "", send: async () => assert.fail("not sent without a token") });
-  assert.equal(response.status, 401);
-  assert.match((await response.json()).error.message, /还没填 Claude 订阅的 setup token/);
-  response = await call({ token: "t", send: async () => lines({ error: "Failed to authenticate. API Error: 401 OAuth access token is invalid." }) });
+  let response;
+  response = await call({ send: async () => lines({ error: "Failed to authenticate. API Error: 401 OAuth access token is invalid." }) });
   assert.equal(response.status, 401);
   assert.match((await response.json()).error.message, /setup token 不对或过期/);
-  response = await call({ token: "t", send: async () => Response.json({ error: code.NO_BOX }, { status: 501 }) });
-  assert.equal(response.status, 400);
-  assert.equal((await response.json()).error.message, code.NO_BOX);
-  response = await call({ token: "t", send: async () => Response.json({ error: "the box key does not match" }, { status: 401 }) });
-  assert.equal(response.status, 400, "not worth trying again");
-  assert.match((await response.json()).error.message, /不认这把钥匙/);
-  response = await call({ token: "t", send: async () => new Response("Bad gateway", { status: 502 }) });
+  response = await call({ send: async () => Response.json({ error: "no box is online for claude", code: "BOX_OFFLINE" }, { status: 503 }) });
+  assert.equal(response.status, 503, "no box connected is a refused call");
+  response = await call({ send: async () => new Response("Bad gateway", { status: 502 }) });
   assert.equal(response.status, 503, "a box restarting can be tried again");
   assert.match((await response.json()).error.message, /Claude 盒子没接这一轮（502）/);
-  response = await call({ token: "t", send: async () => { throw new Error("network"); } });
+  response = await call({ send: async () => { throw new Error("network"); } });
   assert.equal(response.status, 503);
   // Cut off after it started: the stream ends with an error event, and nothing is kept.
   let saved = null;
   response = await call({
-    token: "t",
-    send: async () => lines({ e: { type: "message_start", message: { id: "m", usage: { input_tokens: 1 } } } }, { error: "API Error: 529 overloaded" }),
+        send: async () => lines({ e: { type: "message_start", message: { id: "m", usage: { input_tokens: 1 } } } }, { error: "API Error: 529 overloaded" }),
     segments: { load: () => [], save: (s) => (saved = s) }
   });
   const sse = await response.text();
@@ -343,8 +335,7 @@ await step("a tool round through boxFetch: the reply stops at the call, the resu
   const recorded = [];
   let answer = calling;
   const turn = {
-    token: "t",
-    async send(body) {
+        async send(body) {
       sent.push(JSON.parse(body));
       const done = { prompt: [{ type: "user", uuid: `p${sent.length}` }], reply: [{ type: "assistant", uuid: `r${sent.length}` }] };
       return new Response([...answer.map((e) => ({ e })), { done }].map((l) => `${JSON.stringify(l)}\n`).join(""));
@@ -440,7 +431,7 @@ await step("an answer that stops before the box says it is done is a cut-off tur
   const lines = (...l) => new Response(l.map((x) => `${JSON.stringify(x)}\n`).join(""));
   let saved = null;
   const recorded = [];
-  const turn = { token: "t", send: async () => lines(started, ...said), segments: { load: () => [], save: (x) => (saved = x) }, record: (...a) => recorded.push(a) };
+  const turn = { send: async () => lines(started, ...said), segments: { load: () => [], save: (x) => (saved = x) }, record: (...a) => recorded.push(a) };
   let response = await code.boxFetch(turn)("u", ask(false));
   assert.equal(response.status, 503, "worth trying again");
   assert.match((await response.json()).error.message, /半路断了/);
@@ -457,7 +448,7 @@ await step("aborted, or no longer read, the call cancels the box's answer, so th
   // Streaming, aborted halfway: the box's answer is cancelled and the stream ends.
   let open = openAnswer(started, ...said);
   let controller = new AbortController();
-  let response = await code.boxFetch({ token: "t", send: async () => open.response })("u", { ...ask(true), signal: controller.signal });
+  let response = await code.boxFetch({ send: async () => open.response })("u", { ...ask(true), signal: controller.signal });
   const reader = response.body.getReader();
   assert.match(new TextDecoder().decode((await reader.read()).value), /message_start/);
   controller.abort();
@@ -465,7 +456,7 @@ await step("aborted, or no longer read, the call cancels the box's answer, so th
   assert.equal(open.state.cancelled, true);
   // Streaming, and the reader stops reading.
   open = openAnswer(started, ...said);
-  response = await code.boxFetch({ token: "t", send: async () => open.response })("u", ask(true));
+  response = await code.boxFetch({ send: async () => open.response })("u", ask(true));
   const second = response.body.getReader();
   await second.read();
   await second.cancel();
@@ -474,14 +465,14 @@ await step("aborted, or no longer read, the call cancels the box's answer, so th
   // A call that does not stream fails as fetch does, and cancels the box's answer too.
   open = openAnswer(started, ...said);
   controller = new AbortController();
-  const pending = code.boxFetch({ token: "t", send: async () => open.response })("u", { ...ask(false), signal: controller.signal });
+  const pending = code.boxFetch({ send: async () => open.response })("u", { ...ask(false), signal: controller.signal });
   setTimeout(() => controller.abort(), 10);
   await assert.rejects(pending, (error) => error.name === "AbortError");
   assert.equal(open.state.cancelled, true);
   // Aborted before the box said anything.
   open = openAnswer();
   controller = new AbortController();
-  const early = code.boxFetch({ token: "t", send: async () => open.response })("u", { ...ask(true), signal: controller.signal });
+  const early = code.boxFetch({ send: async () => open.response })("u", { ...ask(true), signal: controller.signal });
   setTimeout(() => controller.abort(), 10);
   await assert.rejects(early, (error) => error.name === "AbortError");
   assert.equal(open.state.cancelled, true);

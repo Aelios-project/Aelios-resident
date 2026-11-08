@@ -6,16 +6,18 @@
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "public",
-    "run_worker_first": ["/messengers/*", "/tg/*", "/web/*", "/mcp/*", "/stickers/*", "/tasks/*", "/runner/*", "/avatar/*", "/r/*", "/manifest.webmanifest"]
+    "run_worker_first": ["/messengers/*", "/tg/*", "/web/*", "/mcp/*", "/stickers/*", "/tasks/*", "/runner/*", "/box/*", "/avatar/*", "/r/*", "/manifest.webmanifest"]
   },
   "durable_objects": {
     "bindings": [
-      { "name": "RESIDENT", "class_name": "Resident" }
+      { "name": "RESIDENT", "class_name": "Resident" },
+      { "name": "BOXES", "class_name": "BoxHub" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Resident"] },
-    { "tag": "v2", "new_sqlite_classes": ["ClaudeBox"] }
+    { "tag": "v2", "new_sqlite_classes": ["ClaudeBox"] },
+    { "tag": "v3", "renamed_classes": [{ "from": "ClaudeBox", "to": "BoxHub" }] }
   ],
   "vars": {
     "FAKE_MODEL": "true",
@@ -35,9 +37,6 @@
     "TG_WEBHOOK_SECRET": "test-secret",
     "AELIOS_API_KEY": "test-key",
     "WEB_KEY": "test-web-key",
-    "CLOUD_TASK_API_BASE": "http://127.0.0.1:9999",
-    // The fake Claude box in mock-server.mjs, for the claude-code/… models.
-    "CLAUDE_BOX_URL": "http://127.0.0.1:9999/claude-box",
-    "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-test-token-for-the-fake-box"
+    "CLOUD_TASK_API_BASE": "http://127.0.0.1:9999"
   }
 }

@@ -41,7 +41,7 @@ export function fingerprintOf(turn) {
 export class Session {
   constructor({ plug, turn, key, ctx }) {
     this.id = randomUUID();
-    // The tunnel reaches every path of the box, so the session's MCP server also wants a key only its helper has.
+    // Any program on this machine can reach the loopback port, so the session's MCP server also wants a key only its helper has.
     this.secret = randomBytes(32).toString("hex");
     Object.assign(this, { plug, key, ctx, model: turn.model, system: turn.system, apiKey: String(turn.key ?? "").trim() });
     this.fingerprint = fingerprintOf(turn);

@@ -14,7 +14,9 @@ const at = (path) => import(pathToFileURL(join(process.cwd(), path)).href);
 const worker = await at(join(dir, "kiro-box.mjs"));
 const kiro = await at("acp-box/plugs/kiro.mjs");
 const prompt = await at("acp-box/prompt.mjs");
-const box = await at("acp-box/server.mjs");
+const box = await at("acp-box/kiro-turn.mjs");
+const localServer = await at("acp-box/local.mjs");
+const engines = await at("acp-box/engines.mjs");
 const sessions = await at("acp-box/session.mjs");
 
 const KEY = "ksk_test_0123456789abcdefghij";
@@ -38,15 +40,16 @@ async function step(name, fn) {
   }
 }
 
-const server = box.createBox();
-await new Promise((done) => server.listen(0, "127.0.0.1", done));
-const URL_ = `http://127.0.0.1:${server.address().port}/turn`;
+// The box's own engine, as the socket drives it: the key is the machine's, not the turn's.
+const local = await localServer.startLocal();
+const engine = engines.createEngines({ kiro: KEY }, { base: local.base }).kiro;
 const TOOLS = [{ name: "start_thread", description: "Hand a job to a thread.", input_schema: { type: "object", properties: { job: { type: "string" } } } }];
 const said = (who, text, mark) => ({ who, text, mark });
 async function turn(body) {
-  const response = await fetch(URL_, { method: "POST", body: JSON.stringify({ helper: "kiro", key: KEY, model: "auto", system: "SYSTEM PROMPT", ...body }) });
-  const text = await response.text();
-  return { status: response.status, lines: text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)) };
+  const lines = [];
+  // A key or helper on the wire is overwritten by the box's own.
+  await engine.turn({ model: "auto", system: "SYSTEM PROMPT", key: "from-the-wire", helper: "other", ...body }, (line) => lines.push(line), new AbortController().signal);
+  return { lines };
 }
 const logged = () => readFileSync(LOG, "utf8").trim().split("\n").map((line) => JSON.parse(line));
 const reset = () => writeFileSync(LOG, "");
@@ -65,7 +68,7 @@ await step("the command line is ACP, trusts only the resident's tools, never all
   assert.deepEqual(kiro.kiroArgs("auto", true), ["acp", "--agent", "resident", "--model", "auto", "--trust-tools=@resident"]);
   assert.equal(kiro.kiroArgs("auto", false).at(-1), "--trust-tools=");
   assert.equal(box.problem({ key: KEY, model: "--evil", system: "", messages: [said("User", "x")] }) !== null, true);
-  assert.match(box.problem({ model: "auto", system: "", messages: [said("User", "x")] }), /^KIRO_API_KEY is not set/);
+  assert.match(box.problem({ model: "auto", system: "", messages: [said("User", "x")] }), /^KIRO_API_KEY is not set on the box machine/);
 });
 
 await step("the local-login test switch is off by default", async () => {
@@ -137,13 +140,13 @@ await step("prompt.plan resumes only when the marks still match", () => {
 await step("the Worker side: messages with marks and tools go out; tool lines come back as tool_use", async () => {
   const sent = [];
   const boxReply = (lines) => new Response(lines.map((line) => JSON.stringify(line)).join("\n") + "\n");
-  const turnWith = (lines, key = KEY, extra = {}) => ({ key, conversation: "default", send: async (body) => (sent.push(JSON.parse(body)), boxReply(lines)), ...extra });
+  const turnWith = (lines, extra = {}) => ({ conversation: "default", send: async (body) => (sent.push(JSON.parse(body)), boxReply(lines)), ...extra });
   const request = (stream, messages = [{ role: "user", content: [{ type: "text", text: "hi" }] }]) => ({
     method: "POST",
     body: JSON.stringify({ model: "auto", stream, system: "SYS", tools: [{ name: "start_thread", input_schema: { type: "object" } }], messages })
   });
   const credits = [];
-  const ok = await (await worker.kiroFetch(turnWith([{ text: "Hello" }, { text: "!" }, { done: { credits: 0.5 } }], KEY, { credits: (n) => credits.push(n) }))("x", request(false))).json();
+  const ok = await (await worker.kiroFetch(turnWith([{ text: "Hello" }, { text: "!" }, { done: { credits: 0.5 } }], { credits: (n) => credits.push(n) }))("x", request(false))).json();
   assert.equal(ok.content[0].text, "Hello!");
   assert.equal(ok.stop_reason, "end_turn");
   assert.deepEqual(credits, [0.5]);
@@ -163,13 +166,10 @@ await step("the Worker side: messages with marks and tools go out; tool lines co
   assert.match(streamed, /text_delta/);
   assert.match(streamed, /message_stop/);
   assert.deepEqual(sent.at(-1).results, [{ type: "tool_result", tool_use_id: "toolu_1", content: [{ type: "text", text: "done" }] }]);
-  const refused = await worker.kiroFetch(turnWith([{ error: `401 unauthorized ${KEY}` }]))("x", request(false));
+  const refused = await worker.kiroFetch(turnWith([{ error: "401 unauthorized" }]))("x", request(false));
   assert.ok(refused.status >= 400);
-  assert.ok(!(await refused.text()).includes(KEY));
-  const count = sent.length;
-  const missing = await worker.kiroFetch(turnWith([], ""))("x", request(false));
-  assert.match((await missing.json()).error.message, /^KIRO_API_KEY is not set/);
-  assert.equal(sent.length, count, "no key, no request to the box");
+  assert.match((await refused.json()).error.message, /Kiro did not accept the API key[\s\S]*box machine/);
+  assert.ok(sent.every((body) => !("key" in body) && !("helper" in body) && !JSON.stringify(body).includes(KEY)), "no credential in anything sent to the box");
 });
 
 await step("dropping a session stops its process and removes its home", async () => {
@@ -181,8 +181,8 @@ await step("dropping a session stops its process and removes its home", async ()
   assert.equal(sessions.byConversation.size, 0);
 });
 
-server.close();
-server.closeAllConnections?.();
+local.server.close();
+local.server.closeAllConnections?.();
 rmSync(dir, { recursive: true, force: true });
 rmSync(work, { recursive: true, force: true });
 if (failures) {

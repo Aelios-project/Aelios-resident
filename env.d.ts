@@ -4,11 +4,12 @@ interface __BaseEnv_Env {
 	BROWSER: BrowserRun;
 	AI: Ai;
 	RESIDENT: DurableObjectNamespace<import("./src/index").Resident>;
+	BOXES: DurableObjectNamespace<import("./src/index").BoxHub>;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./src/index");
-		durableNamespaces: "Resident" | "ClaudeBox";
+		durableNamespaces: "Resident" | "BoxHub";
 	}
 	interface Env extends __BaseEnv_Env {}
 }
