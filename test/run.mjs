@@ -847,14 +847,14 @@ if (phase === "no-model") {
   await step("a provider of your own (custom/…) is refused, with nothing called", async () => {
     const response = await web("/web/model", "test-web-key", { text: "custom/nous/claude-test" });
     assert.equal(response.status, 400, "refused");
-    assert.match((await response.json()).error, /no longer supported/);
+    assert.match((await response.json()).error, /已经不支持了/);
     assert.equal((await log()).filter((e) => e.kind.startsWith("custom")).length, 0);
   });
 
   await step("without Aelios or a box a model is not accepted, and says why in one line", async () => {
     const response = await web("/web/model", "test-web-key", { text: "anthropic/claude-opus-5-5" });
     assert.equal(response.status, 400);
-    assert.match((await response.json()).error, /No model is set up: connect Aelios/);
+    assert.match((await response.json()).error, /还没有可用的模型：去设置页接上 Aelios/);
   });
 
   await step("without Aelios the picker is told to keep to its own catalog", async () => {

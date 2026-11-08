@@ -3,7 +3,8 @@
 
 import type { LanguageModelV4 } from "@ai-sdk/provider";
 
-export const NO_MODEL = "No model is set up: connect Aelios on the settings page (Aelios), or set up a Claude box or a Kiro box.";
+// Shown to the owner in the chat, so it is in the page's language.
+export const NO_MODEL = "还没有可用的模型：去设置页接上 Aelios，或者配一个 Claude 盒子、Kiro 盒子。";
 
 /** Ids of the removed `custom/…` provider: a saved choice like this is ignored, not deleted. */
 export function isRemovedModel(id: string): boolean {

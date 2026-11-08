@@ -4519,7 +4519,7 @@ export class Resident extends Think<Env> {
    */
   async webSetModel(id: string): Promise<WebModel | { error: string }> {
     const model = id.trim();
-    if (isRemovedModel(model)) return { error: "Your own provider (custom/…) is no longer supported: pick a model from the Aelios list, or a Claude or Kiro box model." };
+    if (isRemovedModel(model)) return { error: "自己的供应商（custom/…）已经不支持了：从 Aelios 的清单里选一个模型，或者用 Claude 盒子、Kiro 盒子的模型。" };
     if (model) {
       try {
         const result = await generateText({
