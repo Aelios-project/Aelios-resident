@@ -271,3 +271,24 @@ await test("progress: a working thread's last steps are kept, strictly checked, 
   assert.deepEqual(await f.store.progress(f.token, { workId: work.workId, token: work.token, steps }), { ok: true, ignored: true });
   assert.deepEqual(f.store.steps.last(task.root), [], "a late one is not shown");
 });
+
+await test("progress writes nothing the web page shows; the quiet tag takes them", async () => {
+  const f = await paired();
+  const task = f.add("job");
+  const { work } = await f.store.poll(f.token, { claimKey: "ck_quiet001" });
+  const shown = [];
+  const loud = (strings, ...values) => {
+    const statement = f.db.prepare(strings.join("?"));
+    if (!/^\s*SELECT/i.test(strings[0])) shown.push(strings.join("?"));
+    return /^\s*SELECT/i.test(strings[0]) ? statement.all(...values) : (statement.run(...values), []);
+  };
+  const quiet = (strings, ...values) => { const st = f.db.prepare(strings.join("?")); return /^\s*SELECT/i.test(strings[0]) ? st.all(...values) : (st.run(...values), []); };
+  const atomic = (fn) => { f.db.exec("BEGIN IMMEDIATE"); try { const out = fn(); f.db.exec("COMMIT"); return out; } catch (error) { f.db.exec("ROLLBACK"); throw error; } };
+  const store = new machine.MachineStore(loud, f.tasks, atomic, quiet);
+  shown.length = 0;
+  const steps = [{ kind: "read", title: "read a.js" }];
+  await store.progress(f.token, { workId: work.workId, token: work.token, steps });
+  await store.progress(f.token, { workId: work.workId, token: work.token, steps });
+  assert.deepEqual(shown, [], "a step every few seconds must not change what the page reads");
+  assert.deepEqual(store.steps.last(task.root), steps);
+});

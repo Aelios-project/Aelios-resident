@@ -136,7 +136,11 @@ export class MachineStore {
   /** What each working thread is doing (thread-steps.ts). */
   readonly steps: StepStore;
 
-  constructor(private readonly sql: Sql, private readonly tasks: TaskStore, private readonly atomic: <T>(operation: () => T) => T) {
+  /**
+   * `quiet` is the same database without the web page's change mark: a step arrives every few seconds, and it must not
+   * make the page read the whole conversation again (resident.ts, sqlShownOnWeb).
+   */
+  constructor(private readonly sql: Sql, private readonly tasks: TaskStore, private readonly atomic: <T>(operation: () => T) => T, private readonly quiet: Sql = sql) {
     sql`CREATE TABLE IF NOT EXISTS res_machine (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
       created_at INTEGER NOT NULL, last_seen_at INTEGER, revoked_at INTEGER)`;
     sql`CREATE TABLE IF NOT EXISTS res_machine_code (code_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)`;
@@ -150,7 +154,7 @@ export class MachineStore {
       options TEXT NOT NULL, recommend TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (thread, key))`;
     // What a thread told them without needing an answer (the receipt's notice), one per work.
     sql`CREATE TABLE IF NOT EXISTS res_machine_notes (work_id TEXT PRIMARY KEY, thread TEXT NOT NULL, task_id TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL)`;
-    this.steps = new StepStore(sql);
+    this.steps = new StepStore(quiet);
   }
 
   active(): Machine | null {
@@ -290,7 +294,7 @@ export class MachineStore {
     const { workId, token: workToken, steps } = parsed as { workId: string; token: string; steps: Step[] };
     if (JSON.stringify(input).includes(token)) fail(400, "INVALID_PROGRESS", "a progress never carries the runner's token");
     return this.atomic(() => {
-      this.#seen(machine);
+      this.quiet`UPDATE res_machine SET last_seen_at = ${Date.now()} WHERE id = ${machine.id}`;
       const work = this.sql<Work>`SELECT * FROM res_machine_work WHERE work_id = ${workId} AND machine_id = ${machine.id}`[0];
       if (!work) fail(409, "UNKNOWN_WORK", "no such work for this runner");
       if (!same(work!.token, workToken)) fail(409, "INVALID_TOKEN", "the work's token is not right");

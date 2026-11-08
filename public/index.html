@@ -730,6 +730,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
               </template>
               <button class="btn small" type="button" x-show="item.kind === 'stuck' && !item.options.length" @click="waitingAct(item)" x-text="item.action === 'settings' ? '去设置' : '打开线程'"></button>
               <button class="icon-btn sm" type="button" @click="openThread(item.thread)" title="打开线程" aria-label="打开线程"><i class="i i-open" aria-hidden="true"></i></button>
+              <button class="icon-btn sm" type="button" x-show="item.kind === 'stuck'" @click="waitingDismiss(item)" title="收起，再出错时会回来" aria-label="收起"><i class="i i-x" aria-hidden="true"></i></button>
             </span>
           </div>
         </template>
@@ -737,7 +738,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
     </template>
     <template x-for="item in threadsIn('open')" :key="item.id">
       <button class="trow" :class="{ working: item.status === 'sent' || item.status === 'working', ask: item.waiting }" type="button" @click="openThread(item.id)" title="打开线程">
-        <span class="top-line"><span class="t" x-text="item.title"></span><span class="unread" x-show="unreadOf(item.id)" x-text="unreadOf(item.id)" aria-label="有新消息"></span><span class="pill" :class="taskPill(stateOf(item))" x-text="taskStatusText(stateOf(item), item.runs)"></span></span>
+        <span class="top-line"><span class="t"><span x-text="item.title"></span><i class="unread" x-show="unreadOf(item.id)" role="img" aria-label="有新动态" title="有新动态，点开就算看过"></i></span><span class="pill" :class="taskPill(stateOf(item))" x-text="taskStatusText(stateOf(item), item.runs)"></span></span>
         <template x-if="item.status === 'sent' || item.status === 'working'"><span class="track" aria-hidden="true"><span></span></span></template>
         <span class="progress" x-show="progressLines(item).length" aria-label="正在做"><template x-for="(s, i) in progressLines(item)" :key="i"><span x-text="s.title"></span></template></span>
         <span class="sub"><span x-text="runsText(item.runs) + ' · ' + item.tasks + ' 单'"></span><span x-text="fmt(item.updatedAt)"></span></span>
@@ -748,8 +749,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
       <template x-for="item in threadsIn('done')" :key="item.id">
         <button class="li" type="button" @click="openThread(item.id)" title="打开线程">
           <span class="pill" :class="taskPill(stateOf(item))" style="height: 8px; width: 8px; padding: 0; background: currentColor" aria-hidden="true"></span>
-          <span class="name" x-text="item.title"></span>
-          <span class="unread" x-show="unreadOf(item.id)" x-text="unreadOf(item.id)" aria-label="有新消息"></span>
+          <span class="name"><span x-text="item.title"></span><i class="unread" x-show="unreadOf(item.id)" role="img" aria-label="有新动态" title="有新动态，点开就算看过"></i></span>
           <span class="val" x-text="taskStatusText(stateOf(item), item.runs) + ' · ' + fmt(item.updatedAt)"></span>
         </button>
       </template>
