@@ -46,8 +46,7 @@ const BY_REASON: Record<string, WaitingAction> = { needs_login: "settings", miss
  * status. The runner's reason code decides; the keyword match on the text is the fallback for a result that has none
  * (rows from before the code existed, cloud tasks).
  */
-export function stuckAction(summary: string, choices: readonly string[], reason = ""): WaitingAction | null {
-  if (choices.length) return "";
+export function stuckAction(summary: string, reason = ""): WaitingAction | null {
   if (reason) return BY_REASON[reason] ?? null;
   if (NEEDS_SETTING.test(summary)) return "settings";
   return NEEDS_PERMISSION.test(summary) ? "open" : null;
@@ -84,8 +83,8 @@ export function build({ asks, notes, threads, seen, now }: WaitingInput): { item
     } else if (thread.status === "done") {
       put({ ...base, id: `${thread.id}:done:${thread.updatedAt}`, kind: "done", line: firstSentence(thread.summary) });
     } else if (thread.status === "failed") {
-      const action = stuckAction(thread.summary, thread.choices, thread.reason);
-      if (action !== null) put({ ...base, id: `${thread.id}:stuck:${thread.updatedAt}`, kind: "stuck", line: firstSentence(thread.summary), options: thread.choices, action });
+      const action = stuckAction(thread.summary, thread.reason);
+      if (action !== null) put({ ...base, id: `${thread.id}:stuck:${thread.updatedAt}`, kind: "stuck", line: firstSentence(thread.summary), action });
     }
   }
   // A thread keeps its newest note only.

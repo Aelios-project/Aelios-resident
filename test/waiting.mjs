@@ -33,20 +33,20 @@ await test("only decisions and actions are listed: asks first, a stuck one with 
       thread("d", { status: "failed", summary: "Blocked: no network" }), thread("e", { status: "failed", summary: "The API key was rejected." }),
       thread("f", { status: "failed", summary: "Failed", choices: ["Retry"] })]
   }));
-  assert.deepEqual(items.map((i) => [i.thread, i.kind, i.action]), [["a", "ask", ""], ["f", "stuck", ""], ["e", "stuck", "settings"]].sort((x, y) => items.findIndex((i) => i.thread === x[0]) - items.findIndex((i) => i.thread === y[0])));
+  assert.deepEqual(items.map((i) => [i.thread, i.kind, i.action]), [["a", "ask", ""], ["e", "stuck", "settings"]].sort((x, y) => items.findIndex((i) => i.thread === x[0]) - items.findIndex((i) => i.thread === y[0])));
   assert.deepEqual(items[0], { id: "a:ask:k1", kind: "ask", thread: "a", task: "a-t", title: "Title a", line: "Which one first?", options: ["A", "B"], recommend: "A", at: now - 1000, action: "" });
   assert.deepEqual(news.map((i) => [i.thread, i.kind]).sort(), [["b", "note"], ["c", "done"]]);
   assert.equal(waiting.firstSentence("x".repeat(300)).length, 120);
-  assert.equal(waiting.stuckAction("Blocked: no network", []), null);
-  assert.equal(waiting.stuckAction("Permission denied for rm", []), "open");
+  assert.equal(waiting.stuckAction("Blocked: no network"), null);
+  assert.equal(waiting.stuckAction("Permission denied for rm"), "open");
 });
 
 await test("the runner's reason code decides what a failure asks of the owner; the keywords are only the fallback", () => {
-  assert.equal(waiting.stuckAction("anything", [], "needs_login"), "settings");
-  assert.equal(waiting.stuckAction("anything", [], "missing_key"), "settings");
-  assert.equal(waiting.stuckAction("anything", [], "permission_denied"), "open");
-  for (const reason of ["helper_missing", "workspace_denied", "error"]) assert.equal(waiting.stuckAction("The API key was rejected.", [], reason), null, "a code that is not actionable wins over the words");
-  assert.equal(waiting.stuckAction("The API key was rejected.", [], ""), "settings", "old rows: keywords");
+  assert.equal(waiting.stuckAction("anything", "needs_login"), "settings");
+  assert.equal(waiting.stuckAction("anything", "missing_key"), "settings");
+  assert.equal(waiting.stuckAction("anything", "permission_denied"), "open");
+  for (const reason of ["helper_missing", "workspace_denied", "error"]) assert.equal(waiting.stuckAction("The API key was rejected.", reason), null, "a code that is not actionable wins over the words");
+  assert.equal(waiting.stuckAction("The API key was rejected.", ""), "settings", "old rows: keywords");
   const { items } = waiting.build(input({ threads: [thread("a", { status: "failed", summary: "x", reason: "needs_login" }), thread("b", { status: "failed", summary: "x", reason: "error" })] }));
   assert.deepEqual(items.map((i) => [i.thread, i.action]), [["a", "settings"]]);
 });

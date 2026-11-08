@@ -28,7 +28,7 @@ export class WaitingStore {
     const { items, news } = this.#built(now);
     const unread: Record<string, number> = {};
     for (const item of news) unread[item.thread] = (unread[item.thread] ?? 0) + 1;
-    return { items, open: items.filter((item) => item.kind === "ask").length, unread };
+    return { items, open: items.length, unread };
   }
 
   /** The owner opened a thread (or null: read everything): its news counts as read. */
