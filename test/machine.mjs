@@ -212,6 +212,24 @@ await test("old finished work takes its receipts and notes with it", async () =>
   assert.ok(first);
 });
 
+await test("the heartbeat renames the machine, refuses unknown fields; files ride on work and are fetched only by the machine that holds it", async () => {
+  const f = await paired();
+  await f.store.heartbeat(f.token, { plugin: "kiro", busy: null, label: "Work Laptop" });
+  assert.equal(f.store.status().machine.label, "Work Laptop");
+  await f.store.heartbeat(f.token, { plugin: "kiro" });
+  assert.equal(f.store.status().machine.label, "Work Laptop", "no label sent: the name stays");
+  await assert.rejects(f.store.heartbeat(f.token, { cwd: "/" }), code(400, "INVALID_HEARTBEAT"));
+  const key = "a".repeat(32);
+  const added = f.tasks.add({ title: "Synthetic", job: "look", execution: "machine", direct: true });
+  assert.throws(() => f.store.enqueue(added.task, "say", "look", Array(5).fill({ key, name: "a.txt", type: "text/plain", size: 1 })), code(400, "TOO_MANY_ATTACHMENTS"), "never more than the runner reads");
+  f.store.enqueue(added.task, "say", "look", [{ key, name: "notes.pdf", type: "application/pdf", size: 10 }]);
+  const { work } = await f.store.poll(f.token, { claimKey: "ck_attachments" });
+  assert.deepEqual(work.attachments, [{ key, name: "notes.pdf", type: "application/pdf", size: 10 }]);
+  assert.equal((await f.store.workFile(f.token, { workId: work.workId, key })).name, "notes.pdf");
+  await assert.rejects(f.store.workFile(f.token, { workId: work.workId, key: "b".repeat(32) }), code(404, "UNKNOWN_FILE"));
+  await assert.rejects(f.store.workFile(f.token, { workId: "w_other", key }), code(404, "UNKNOWN_FILE"));
+});
+
 await test("a failed final may carry a reason code, stored on the task; any other final with one, or an unknown code, is refused", async () => {
   const f = await paired();
   const task = f.add("job");

@@ -3109,6 +3109,19 @@ if (phase === "web") {
     assert.equal((await lines()).findLast((line) => line.role === "user").quote, undefined, "a quote it cannot find is left out");
   });
 
+  await step("a file sent from the web shows as `attached` chips, not as text; a refused sticker keeps no file", async () => {
+    const data = Buffer.from("hello notes").toString("base64");
+    await say({ text: "看看这个", files: [{ name: "notes.txt", data }] });
+    const mine = (await lines()).findLast((line) => line.role === "user");
+    assert.equal(mine.text, "看看这个", "the file is not in the words");
+    assert.deepEqual(mine.attached, [{ name: "notes.txt", size: 11 }]);
+    assert.ok(!JSON.stringify(mine).includes("[attached file"), "no mark on the page");
+    const before = (await lines()).length;
+    const refused = await json("/web/say", { text: "x", files: [{ name: "b.txt", data }], sticker: "no/such" });
+    assert.equal(refused.status, 400);
+    assert.equal((await lines()).length, before, "nothing saved");
+  });
+
   await step("a voice message recorded on the web is kept to play back and, with no one to hear it, marked unheard", async () => {
     await say({ voice: { data: wav(2) } });
     const all = await lines();

@@ -30,6 +30,8 @@ export class MediaStore {
     sql`CREATE TABLE IF NOT EXISTS res_media (key TEXT PRIMARY KEY, kind TEXT NOT NULL, type TEXT NOT NULL, size INTEGER NOT NULL,
       seconds REAL, at INTEGER NOT NULL)`;
     sql`CREATE TABLE IF NOT EXISTS res_media_pieces (key TEXT NOT NULL, n INTEGER NOT NULL, bytes BLOB NOT NULL, PRIMARY KEY (key, n))`;
+    // The text made from a kept file (a PDF or Office document), kept as a file of its own: original key -> text key.
+    sql`CREATE TABLE IF NOT EXISTS res_media_text (key TEXT PRIMARY KEY, text_key TEXT NOT NULL)`;
     // The voice a reply was said in, or read out in afterwards, by the reply's message id.
     sql`CREATE TABLE IF NOT EXISTS res_media_spoken (message TEXT PRIMARY KEY, key TEXT NOT NULL, at INTEGER NOT NULL)`;
   }
@@ -63,6 +65,17 @@ export class MediaStore {
     return at >= row.size ? { type: row.type, bytes, seconds: row.seconds } : null;
   }
 
+  /** Keeps `text` as the readable text of the file `key`. */
+  putText(key: string, text: string): void {
+    const saved = this.put("file", "text/markdown", new TextEncoder().encode(text));
+    if ("key" in saved) this.sql`INSERT OR REPLACE INTO res_media_text (key, text_key) VALUES (${key}, ${saved.key})`;
+  }
+
+  /** The key of the text kept for a file, if there is one. */
+  textKeyOf(key: string): string | null {
+    return this.sql<{ text_key: string }>`SELECT text_key FROM res_media_text WHERE key = ${key}`[0]?.text_key ?? null;
+  }
+
   kindOf(key: string): MediaKind | null {
     const [row] = this.sql<{ kind: MediaKind }>`SELECT kind FROM res_media WHERE key = ${key}`;
     return row?.kind ?? null;
@@ -74,6 +87,9 @@ export class MediaStore {
   }
 
   remove(key: string): void {
+    const text = this.textKeyOf(key);
+    this.sql`DELETE FROM res_media_text WHERE key = ${key}`;
+    if (text) this.remove(text);
     this.sql`DELETE FROM res_media_pieces WHERE key = ${key}`;
     this.sql`DELETE FROM res_media WHERE key = ${key}`;
     this.sql`DELETE FROM res_media_spoken WHERE key = ${key}`;
