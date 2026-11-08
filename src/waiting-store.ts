@@ -20,7 +20,7 @@ export class WaitingStore {
         : [];
     });
     const seen = new Set(this.sql<{ id: string }>`SELECT id FROM res_waiting_seen`.map((row) => row.id));
-    return build({ asks: this.machines.allAsks(), notes: this.machines.notes(), threads, seen, now });
+    return build({ asks: this.machines.allAsks(), perms: this.machines.perms.pending(), notes: this.machines.notes(), threads, seen, now });
   }
 
   /** What needs the owner, how many asks are open, and the unread news per thread. */
@@ -44,11 +44,16 @@ export class WaitingStore {
     if (this.#built(now).items.some((item) => item.kind === "stuck" && item.id === id)) this.sql`INSERT OR REPLACE INTO res_waiting_seen VALUES (${id}, ${now})`;
   }
 
+  /** The owner's Allow / Deny on a held permission. False when it is no longer waiting. */
+  decide(perm: string, allow: boolean): boolean {
+    return this.machines.perms.answer(perm, allow);
+  }
+
   /** The pushes still to send: each open ask once. */
   unpushed(): { body: string; tag: string }[] {
     const out: { body: string; tag: string }[] = [];
     for (const item of this.list().items) {
-      if (item.kind !== "ask") continue;
+      if (item.kind !== "ask" && item.kind !== "permission") continue;
       const mark = `push:${item.id}`;
       if (this.sql`SELECT 1 FROM res_waiting_seen WHERE id = ${mark}`.length) continue;
       this.sql`INSERT INTO res_waiting_seen VALUES (${mark}, ${Date.now()})`;

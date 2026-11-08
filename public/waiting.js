@@ -8,7 +8,7 @@ function waitingPage() {
       try { this.waitList = await this.api('/web/waiting'); } catch (error) { /* the threads below still work */ }
     },
     waitingKind(item) {
-      return item.kind === 'ask' ? '等你' : '卡住了';
+      return item.kind === 'stuck' ? '卡住了' : item.kind === 'permission' ? '要你点头' : '等你';
     },
     // An option goes the way a choice on a thread's card goes.
     async waitingAnswer(item, option) {
@@ -18,6 +18,14 @@ function waitingPage() {
         await this.api('/web/task/choose', { method: 'POST', body: { id: item.task, text: option } });
         await this.loadWaiting();
       } catch (error) { this.notify(error.message); }
+      this.choosing = '';
+    },
+    // Allow / Deny on a permission the machine holds: only this button answers it.
+    async waitingPermission(item, allow) {
+      if (this.choosing) return;
+      this.choosing = item.id;
+      try { this.waitList = await this.api('/web/waiting/permission', { method: 'POST', body: { id: item.perm, allow: allow } }); }
+      catch (error) { this.notify(error.message); await this.loadWaiting(); }
       this.choosing = '';
     },
     // Opening a thread reads its news.

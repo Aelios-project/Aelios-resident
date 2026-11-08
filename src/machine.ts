@@ -6,6 +6,7 @@
 import type { Sql } from "./sticker-store";
 import { progressOf, StepStore, type Step } from "./thread-steps";
 import { ATTACH_MAX_THREAD, type Attachment } from "./attachments";
+import { PermStore, parsePermReport } from "./machine-perms";
 import { TASK_NOTE_PREFIX, type Task, type TaskStatus, type TaskStore } from "./cloud-tasks";
 
 export const RUNNER_PROTOCOL = "aelios-runner/1";
@@ -130,11 +131,13 @@ function receiptOf(input: unknown): Receipt {
 }
 
 /** What a final receipt did, for the host to keep a record of. */
-export type Finished = { task: Task; status: TaskStatus };
+export type Finished = { task: Task; status: TaskStatus; kind: WorkKind };
 
 export class MachineStore {
   /** What each working thread is doing (thread-steps.ts). */
   readonly steps: StepStore;
+  /** Permissions the runner holds for the owner (machine-perms.ts). */
+  readonly perms: PermStore;
 
   /**
    * `quiet` is the same database without the web page's change mark: a step arrives every few seconds, and it must not
@@ -155,6 +158,7 @@ export class MachineStore {
     // What a thread told them without needing an answer (the receipt's notice), one per work.
     sql`CREATE TABLE IF NOT EXISTS res_machine_notes (work_id TEXT PRIMARY KEY, thread TEXT NOT NULL, task_id TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL)`;
     this.steps = new StepStore(quiet);
+    this.perms = new PermStore(sql);
   }
 
   active(): Machine | null {
@@ -271,17 +275,18 @@ export class MachineStore {
     const accept = Array.isArray(body.accept) ? body.accept.filter((kind): kind is WorkKind => KINDS.includes(kind)) : [...KINDS];
     return this.atomic(() => {
       this.#seen(machine);
+      const answers = this.perms.answers();
       const again = this.sql<Work>`SELECT * FROM res_machine_work WHERE machine_id = ${machine.id} AND claim_key = ${claimKey}`[0];
-      if (again) return { work: this.#shown(again) };
+      if (again) return { work: this.#shown(again), answers };
       // In line per thread: a message waits while an earlier one of its thread has not been taken.
       const held = new Set<string>();
       for (const work of this.sql<Work>`SELECT * FROM res_machine_work WHERE machine_id = ${machine.id} AND state = 'queued' ORDER BY created_at, rowid`) {
         if (held.has(work.thread) || !accept.includes(work.kind)) { held.add(work.thread); continue; }
         this.sql`UPDATE res_machine_work SET state = ${"claimed"}, claim_key = ${claimKey}, lease_until = ${Date.now() + LEASE_MS} WHERE work_id = ${work.work_id}`;
         this.tasks.progress(work.task_id, "机器收到了");
-        return { work: this.#shown(work) };
+        return { work: this.#shown(work), answers };
       }
-      return { work: null };
+      return { work: null, answers };
     });
   }
 
@@ -300,6 +305,25 @@ export class MachineStore {
       if (!same(work!.token, workToken)) fail(409, "INVALID_TOKEN", "the work's token is not right");
       if (work!.state !== "claimed") return { ok: true as const, ignored: true as const }; // it has finished: late steps are not shown
       this.steps.set(work!.thread, steps);
+      return { ok: true as const };
+    });
+  }
+
+  /** The runner holds, or has settled, a permission request of a turn it is running. Not a receipt: nothing is replayed. */
+  async permission(token: string, input: unknown): Promise<{ ok: true; ignored?: true }> {
+    const machine = await this.#machine(token);
+    const report = parsePermReport(object(input));
+    if (typeof report === "string") fail(400, "INVALID_PERMISSION", report);
+    const sent = report as Exclude<typeof report, string>;
+    if (JSON.stringify(input).includes(token)) fail(400, "INVALID_PERMISSION", "a permission report never carries the runner's token");
+    return this.atomic(() => {
+      this.#seen(machine);
+      const work = this.sql<Work>`SELECT * FROM res_machine_work WHERE work_id = ${sent.workId} AND machine_id = ${machine.id}`[0];
+      if (!work) fail(409, "UNKNOWN_WORK", "no such work for this runner");
+      if (!same(work!.token, sent.token)) fail(409, "INVALID_TOKEN", "the work's token is not right");
+      if (work!.state !== "claimed") return { ok: true as const, ignored: true as const };
+      if (sent.state === "closed") this.perms.closed(work!.work_id, sent.id);
+      else this.perms.held(work!, sent);
       return { ok: true as const };
     });
   }
@@ -336,6 +360,7 @@ export class MachineStore {
   #finish(work: Work, receipt: Receipt): Finished | undefined {
     this.sql`UPDATE res_machine_work SET state = ${"done"} WHERE work_id = ${work.work_id}`;
     this.steps.clear(work.thread);
+    this.perms.clearWork(work.work_id);
     // The lapsed-lease ask is the server's own; the runner never knows its key, so its final clears it.
     this.sql`DELETE FROM res_machine_asks WHERE thread = ${work.thread} AND key = ${`lease:${work.work_id}`}`;
     // A cancel is only the order to stop: the stopped turn takes its status from its own receipt, never from this one.
@@ -360,7 +385,7 @@ export class MachineStore {
     if (!task) return undefined;
     const summary = receipt.status === "needs_you" && receipt.ask && !receipt.summary!.includes(receipt.ask.question) ? `${receipt.summary}\n\n${receipt.ask.question}` : receipt.summary!;
     this.tasks.result(task.id, { status, summary: summary.slice(0, SUMMARY_MAX), links: [], choices: receipt.ask?.options ?? [], reason: receipt.reason });
-    return { task: this.tasks.get(task.id)!, status };
+    return { task: this.tasks.get(task.id)!, status, kind: work.kind };
   }
 
   /** Every open ask, of every thread (the waiting list). */
@@ -405,6 +430,7 @@ export class MachineStore {
 
   private close(work: Work, status: TaskStatus, summary: string): void {
     this.sql`UPDATE res_machine_work SET state = ${"done"} WHERE work_id = ${work.work_id}`;
+    this.perms.clearWork(work.work_id);
     this.tasks.moved(work.task_id, status, summary);
   }
 

@@ -144,7 +144,8 @@ import {
   type ThreadCard
 } from "./cloud-tasks";
 import { WaitingStore } from "./waiting-store";
-import { MachineError, MachineStore, machineRecord, machineReply, type Ask, type WorkKind } from "./machine";
+import { MachineError, MachineStore, machineRecord, machineReply, type Ask, type Finished, type WorkKind } from "./machine";
+import { wakesResident } from "./machine-wake";
 import { ATTACH_MARK, ATTACH_MAX_FILES, keep, loadAll, loadFile, markedFile, type Attachment } from "./attachments";
 import { chatLine, openFileTools, summarize } from "./file-summary";
 import { toText } from "./file-text";
@@ -1455,14 +1456,16 @@ export class Resident extends Think<Env> {
   machineRegister(body: unknown, trusted: boolean) { return machineReply(() => this.machines().register(body, trusted)); }
 
   /** The runner's own calls. A final receipt leaves a record in the conversation; it does not start a turn. */
-  async machineRequest(token: string, action: "heartbeat" | "poll" | "receipt" | "progress" | "file", body: unknown) {
+  async machineRequest(token: string, action: "heartbeat" | "poll" | "receipt" | "progress" | "permission" | "file", body: unknown) {
     const machines = this.machines();
     if (action === "file") return machineReply(async () => this.machineFile(await machines.workFile(token, body)));
-    const answer = await machineReply(() => (action === "heartbeat" ? machines.heartbeat(token, body) : action === "poll" ? machines.poll(token, body) : action === "progress" ? machines.progress(token, body) : machines.receipt(token, body)));
-    const finished = (answer.body as { finished?: { task: Task } }).finished;
+    const answer = await machineReply(() => (action === "heartbeat" ? machines.heartbeat(token, body) : action === "poll" ? machines.poll(token, body) : action === "progress" ? machines.progress(token, body) : action === "permission" ? machines.permission(token, body) : machines.receipt(token, body)));
+    const finished = (answer.body as { finished?: Finished }).finished;
     if (finished) {
       delete (answer.body as { finished?: unknown }).finished;
-      await this.machineNote(finished.task.id);
+      // A job or mail that ended done or failed is told to them in the resident's own words, once; the rest stays a record.
+      if (wakesResident(finished)) await this.tellAboutTask(finished.task, (task) => resultNote(task));
+      else await this.machineNote(finished.task.id);
       await this.pushWaitingAsks();
     }
     return answer;
@@ -1484,6 +1487,10 @@ export class Resident extends Think<Env> {
   webWaiting() { return this.waiting().list(); }
   webWaitingRead(thread: string | null) { this.waiting().read(thread); return this.waiting().list(); }
   webWaitingDismiss(item: string) { this.waiting().dismiss(item); return this.waiting().list(); }
+  /** The Allow / Deny button on a held permission: the only way it is answered. */
+  webWaitingPermission(perm: string, allow: boolean) {
+    return this.waiting().decide(perm, allow) ? this.waiting().list() : { error: "这条已经处理过了，或者已经过期" };
+  }
 
   /** Each new ask is pushed once, if push is on. Nothing is written into the conversation. */
   private async pushWaitingAsks(): Promise<void> {
