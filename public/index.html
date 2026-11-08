@@ -36,6 +36,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
 <script src="/markdown.js"></script>
 <script src="/group.js"></script>
 <script src="/machine.js"></script>
+<script src="/attach.js"></script>
 <script src="/waiting.js"></script>
 <script src="/progress.js"></script>
 <script src="/app.js"></script>
@@ -250,6 +251,9 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
                   </template>
                 </div>
               </template>
+              <template x-if="row.line.attached && row.line.role === 'user'">
+                <div class="docs"><template x-for="(d, i) in row.line.attached" :key="i"><span class="doc" x-text="d.name + ' · ' + fileSize(d.size)"></span></template></div>
+              </template>
               <template x-for="(s, i) in stickersOf(row.line)" :key="i">
                 <div class="sticker">
                   <template x-if="s.video"><video :src="s.url" autoplay loop muted playsinline aria-label="表情包"></video></template>
@@ -403,6 +407,11 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
         </template>
       </div>
     </template>
+    <template x-if="docs.length">
+      <div class="docs">
+        <template x-for="(d, i) in docs" :key="i"><span class="doc"><span x-text="d.name + ' · ' + fileSize(d.size)"></span><button type="button" @click="removeDoc(i)" aria-label="拿掉这个文件">×</button></span></template>
+      </div>
+    </template>
     <div class="bar">
       <button class="round" :class="panel && panelTab === 'tools' && 'on'" type="button" @click="togglePanel('tools')" :aria-expanded="Boolean(panel && panelTab === 'tools')" :aria-label="panel && panelTab === 'tools' ? '收起' : '更多：图片、交接信、换模型'">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
@@ -434,6 +443,8 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
               <input type="file" accept="image/*" multiple @change="addPhotos($event)" aria-label="从相册选图"></label>
             <label class="tile"><span class="sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.8l1.4-2h4.6l1.4 2h1.8A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.5"/></svg></span>拍照
               <input type="file" accept="image/*" capture="environment" @change="addPhotos($event)" aria-label="拍照"></label>
+            <label class="tile"><span class="sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></span>文件
+              <input type="file" :accept="attachAccept" multiple @change="addDocs($event)" aria-label="发文件"></label>
             <button class="tile" type="button" x-show="cloud.on" @click="prefill('帮我在后台')"><span class="sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10"/><path d="M4 12h16"/><path d="M4 17h12"/><circle cx="19" cy="7" r="2"/></svg></span>交给线程</button>
             <button class="tile" type="button" x-show="alarms.on" @click="prefill('到时候提醒我')"><span class="sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg></span>提醒我</button>
             <button class="tile" type="button" @click="handoff()"><span class="sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3.5 7l8.5 6 8.5-6"/></svg></span>写交接信</button>
@@ -801,9 +812,19 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
     <div class="links" x-show="thread.runs === 'machine' && thread.status === 'working'">
       <button class="icon-btn sm" type="button" :disabled="threadBusy" @click="stopThread()" title="叫它停下" aria-label="叫它停下"><i class="i i-stop" aria-hidden="true"></i></button>
     </div>
+    <div class="thumbs" x-show="thread.canSay && threadPics.length" style="margin: 0 0 8px">
+      <template x-for="(p, i) in threadPics" :key="p.url"><div><img :src="p.url" alt=""><button type="button" @click="removeThreadPic(i)" aria-label="拿掉这张"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button></div></template>
+    </div>
+    <div class="docs" x-show="thread.canSay && threadDocs.length">
+      <template x-for="(d, i) in threadDocs" :key="i"><span class="doc"><span x-text="d.name + ' · ' + fileSize(d.size)"></span><button type="button" @click="removeThreadDoc(i)" aria-label="拿掉这个文件">×</button></span></template>
+    </div>
     <div class="thread-say" x-show="thread.canSay">
+      <label class="round" x-show="thread.runs === 'machine'" title="发图或文件" aria-label="发图或文件">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12l-8.5 8.5a5 5 0 0 1-7-7L14 5a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7.5"/></svg>
+        <input type="file" :accept="attachAccept" multiple @change="addThreadFiles($event)" hidden>
+      </label>
       <textarea x-model="threadDraft" rows="2" placeholder="直接跟它说，不经过住户" aria-label="跟线程说"></textarea>
-      <button class="round go" type="button" :disabled="threadBusy || !threadDraft.trim()" @click="sayToThread()" aria-label="发给它">
+      <button class="round go" type="button" :disabled="threadBusy || !threadCanSay()" @click="sayToThread()" aria-label="发给它">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5.5 11.5L12 5l6.5 6.5"/></svg>
       </button>
     </div>

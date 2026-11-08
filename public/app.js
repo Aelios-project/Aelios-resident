@@ -1074,16 +1074,18 @@ function resident() {
 
     // ---- saying something ----
     canSend() {
-      return Boolean(this.draft.trim() || this.pics.length);
+      return Boolean(this.draft.trim() || this.pics.length || this.docs.length);
     },
     sendDraft() {
       if (!this.canSend()) return;
       var payload = { text: this.draft.trim() };
       if (this.pics.length) payload.pictures = this.pics.map(function (pic) { return { data: pic.data }; });
+      if (this.docs.length) payload.files = this.docs.map(function (doc) { return { name: doc.name, data: doc.data }; });
       if (this.quote) payload.quote = this.quote.id;
       var shown = { text: this.draft.trim(), pics: this.pics.map(function (pic) { return pic.url; }), quote: this.quote };
       this.draft = '';
       this.pics = [];
+      this.docs = [];
       this.quote = null;
       this.panel = '';
       this.fit();
@@ -1981,11 +1983,16 @@ function resident() {
     },
     async sayToThread() {
       var text = this.threadDraft.trim();
-      if (!text || this.threadBusy) return;
+      if (!this.threadCanSay() || this.threadBusy) return;
       this.threadBusy = true;
       try {
-        var data = await this.api('/web/thread/say', { method: 'POST', body: { id: this.thread.id, text: text } });
+        var body = { id: this.thread.id, text: text };
+        if (this.threadPics.length) body.pictures = this.threadPics.map(function (pic) { return { data: pic.data }; });
+        if (this.threadDocs.length) body.files = this.threadDocs.map(function (doc) { return { name: doc.name, data: doc.data }; });
+        var data = await this.api('/web/thread/say', { method: 'POST', body: body });
         this.threadDraft = '';
+        this.threadPics = [];
+        this.threadDocs = [];
         this.thread = Object.assign({ loaded: true }, data);
         this.loadThread(this.thread.id).catch(function () {});
       } catch (error) {
@@ -2058,7 +2065,7 @@ function resident() {
     },
     kindText(row) {
       var kind = { chat: '聊天', letter: '写交接信', checkin: '定时找你', heartbeat: '心跳', alarm: '闹钟', task: '线程交回', worker: '线程干活',
-        note: '系统提示', compress: '压缩网页', learn: '记下搜到的', trial: '试模型', group: '群聊' }[row.kind] || row.kind;
+        note: '系统提示', compress: '压缩网页', learn: '记下搜到的', file: '读文件', trial: '试模型', group: '群聊' }[row.kind] || row.kind;
       var via = { web: '网页', telegram: 'Telegram', wecom: '企业微信' }[row.via];
       return kind + (via ? ' · ' + via : '') + (row.step ? ' · 工具后' : '');
     },
@@ -3109,5 +3116,5 @@ function resident() {
       this.toast = message;
       setTimeout(function () { if (self.toast === message) self.toast = ''; }, 2400);
     }
-  }, typeof groupPage === 'function' ? groupPage() : {}, typeof machinePage === 'function' ? machinePage() : {}, typeof waitingPage === 'function' ? waitingPage() : {}, typeof progressPage === 'function' ? progressPage() : {});
+  }, typeof groupPage === 'function' ? groupPage() : {}, typeof machinePage === 'function' ? machinePage() : {}, typeof attachPage === 'function' ? attachPage() : {}, typeof waitingPage === 'function' ? waitingPage() : {}, typeof progressPage === 'function' ? progressPage() : {});
 }
