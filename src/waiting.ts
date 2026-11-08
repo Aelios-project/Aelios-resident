@@ -6,7 +6,7 @@ export const ASK_EXPIRES_MS = 7 * 86_400_000;
 export const ITEM_DROPPED_MS = 14 * 86_400_000;
 const LINE_MAX = 120;
 
-export type WaitingKind = "ask" | "note" | "done" | "stuck";
+export type WaitingKind = "ask" | "note" | "done" | "stuck" | "permission";
 /** What a stuck item asks of the owner: change a setting (a key, a login), or open the thread (a permission to give). */
 export type WaitingAction = "" | "settings" | "open";
 export type WaitingItem = {
@@ -21,11 +21,16 @@ export type WaitingItem = {
   recommend: string;
   at: number;
   action: WaitingAction;
+  /** A permission the machine holds: its id (the Allow / Deny buttons answer it) and the redacted command it asks to run. */
+  perm?: string;
+  detail?: string;
 };
 
 export type WaitingInput = {
   /** Open asks of threads on the machine. */
   asks: { thread: string; task: string; key: string; question: string; options: string[]; recommend: string; at: number }[];
+  /** Permissions the machine holds for the owner. */
+  perms?: { id: string; thread: string; task: string; title: string; kind: string; detail: string; at: number }[];
   /** Notes a thread left with its last receipt. */
   notes: { thread: string; task: string; key: string; text: string; at: number }[];
   /** Each thread's newest task. */
@@ -63,7 +68,7 @@ export function firstSentence(text: string): string {
 }
 
 /** `items`: what needs the owner. `news`: done and note items not yet read (they count as unread on their thread). */
-export function build({ asks, notes, threads, seen, now }: WaitingInput): { items: WaitingItem[]; news: WaitingItem[] } {
+export function build({ asks, perms = [], notes, threads, seen, now }: WaitingInput): { items: WaitingItem[]; news: WaitingItem[] } {
   const title = new Map(threads.map((thread) => [thread.id, thread.title]));
   const items = new Map<string, WaitingItem>();
   const put = (item: WaitingItem) => {
@@ -76,6 +81,10 @@ export function build({ asks, notes, threads, seen, now }: WaitingInput): { item
     if (!title.has(ask.thread) || now - ask.at > ASK_EXPIRES_MS) continue;
     put({ id: `${ask.thread}:ask:${ask.key}`, kind: "ask", thread: ask.thread, task: ask.task, title: title.get(ask.thread)!, line: firstSentence(ask.question),
       options: ask.options, recommend: ask.recommend, at: ask.at, action: "" });
+  }
+  for (const perm of perms) {
+    if (!title.has(perm.thread)) continue;
+    put({ id: `${perm.thread}:perm:${perm.id}`, kind: "permission", thread: perm.thread, task: perm.task, title: title.get(perm.thread)!, line: perm.title, options: [], recommend: "", at: perm.at, action: "", perm: perm.id, detail: perm.detail });
   }
   for (const thread of threads) {
     const base = { thread: thread.id, task: thread.taskId, title: thread.title, options: [] as string[], recommend: "", at: thread.updatedAt, action: "" as WaitingAction };
@@ -98,10 +107,10 @@ export function build({ asks, notes, threads, seen, now }: WaitingInput): { item
   }
   const live = [...items.values()].filter((item) => fresh(item.at));
   return {
-    items: live.filter((item) => item.kind === "ask" || (item.kind === "stuck" && !seen.has(item.id))).sort((a, b) => Number(b.kind === "ask") - Number(a.kind === "ask") || b.at - a.at),
+    items: live.filter((item) => item.kind === "ask" || item.kind === "permission" || (item.kind === "stuck" && !seen.has(item.id))).sort((a, b) => Number(b.kind !== "stuck") - Number(a.kind !== "stuck") || b.at - a.at),
     news: live.filter((item) => (item.kind === "done" || item.kind === "note") && !seen.has(item.id))
   };
 }
 
 /** The push for a new ask: the thread's title and the question. */
-export const askPush = (item: WaitingItem) => ({ body: `${item.title}: ${item.line}`.slice(0, 160), tag: "ask" });
+export const askPush = (item: WaitingItem) => ({ body: `${item.title}: ${item.line}`.slice(0, 160), tag: item.kind === "permission" ? "permission" : "ask" });

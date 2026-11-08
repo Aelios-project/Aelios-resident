@@ -1,7 +1,7 @@
 // End to end: the local Worker, the real runner (Aelios-desktop, packages/runner) and its pretend ACP helper (test/fake-agent.mjs).
 // A job the resident sends goes to the machine and its words come back to the thread; her words to a running thread
 // stop the turn and go into the same session; an ASK: line makes the thread wait for her, and her answer resolves it.
-// The resident only gets a record of it (a note), never a turn of its own.
+// A job that ends done or failed makes the resident tell them once; a stopped or waiting one only leaves a record (a note).
 // Needs the Worker and the mock server, like test/run.mjs (a fresh Worker: delete .wrangler/state first):
 //   node test/mock-server.mjs & NO_PROXY=127.0.0.1 npx wrangler dev --config wrangler.test.jsonc --port 8787 &
 //   NO_PROXY=127.0.0.1 node test/machine-e2e.mjs
@@ -63,6 +63,11 @@ async function send(text) {
   assert.equal((await web("/web/say", { text })).status, 200);
   return until(async () => (await web("/web/threads")).data.threads.find((t) => t.runs === "machine" && !before.has(t.id)), "a new machine thread");
 }
+/** The resident's replies stop coming (a finished job makes it speak once). */
+async function settled() {
+  let last = -1;
+  for (;;) { const now = await assistantLines(); if (now === last) return; last = now; await sleep(1500); }
+}
 let runner;
 
 try {
@@ -86,20 +91,17 @@ try {
   });
 
   let first;
-  await step("a job the resident sends runs on the machine; the thread shows its own words; the resident gets a record, not a turn", async () => {
+  await step("a job the resident sends runs on the machine; the thread shows its own words; the resident tells them once", async () => {
     first = await send("机器派活 做完它");
     const replies = await assistantLines();
     const done = await until(async () => { const t = await threadOf(first.id); return t.status === "done" && t; }, "done");
     const reply = done.lines.find((line) => line.role === "result");
     assert.match(reply.text, /done: 做完它/);
     assert.equal(prompts()[0].text, "做完它", "only the job goes to the helper");
+    await until(async () => (await assistantLines()) === replies + 1, "the resident to tell them");
     await sleep(1500);
-    assert.equal(await assistantLines(), replies, "no turn of the resident's to retell it");
-    // The record is in its conversation (the model sees it), not on her page.
-    assert.equal((await web("/web/say", { text: "机器记录几条" })).status, 200);
-    const lines = (await web("/web/messages")).data.data;
-    assert.equal(lines.filter((line) => line.role === "assistant").at(-1).text, "机器记录 1 条");
-    assert.ok(!JSON.stringify(lines).includes("ran on their machine"), "not shown to her");
+    assert.equal(await assistantLines(), replies + 1, "told once, not again");
+    assert.match((await web("/web/messages")).data.data.filter((line) => line.role === "assistant").at(-1).text, /云端回来了.*做完它/s);
   });
 
   await step("her words to a running thread stop the turn and go into the same session; the reply is the thread's own", async () => {
@@ -154,6 +156,7 @@ try {
     const waitingList = async () => (await web("/web/waiting")).data;
     const noted = await send("机器派活 NOTEME 看看");
     await until(async () => (await threadOf(noted.id)).status === "done", "the note job done");
+    await settled();
     // News is not on the list: it is an unread count on the thread, and opening the thread clears it (done + note = 2).
     assert.deepEqual((await waitingList()).items.filter((i) => i.thread === noted.id), []);
     assert.equal((await waitingList()).unread[noted.id], 2);
@@ -161,6 +164,7 @@ try {
     assert.equal((await waitingList()).unread[noted.id], undefined, "opening the thread cleared its unread");
     const blocked = await send("机器派活 BLOCKME 取回来");
     await until(async () => (await threadOf(blocked.id)).status === "failed", "the blocked job");
+    await settled();
     assert.ok(!(await waitingList()).items.some((i) => i.thread === blocked.id), "a failure the owner can do nothing about is only the thread's status");
     const asked = await send("机器派活 ASKME 再选");
     await until(async () => (await waitingList()).items.some((i) => i.thread === asked.id && i.kind === "ask"), "the ask in the list");
@@ -191,7 +195,30 @@ try {
     assert.deepEqual(stopped.tasks.map((task) => task.status), ["stopped"]);
     assert.equal(stopped.steps, undefined, "no steps once it has stopped");
     assert.ok(!(await web("/web/waiting")).data.items.some((i) => i.thread === slow.id));
+    // A stopped thread leaves a record in the conversation (the model sees it), not a reply and not on their page.
+    await settled();
+    assert.equal((await web("/web/say", { text: "机器记录几条" })).status, 200);
+    const lines = (await web("/web/messages")).data.data;
+    assert.match(lines.filter((line) => line.role === "assistant").at(-1).text, /机器记录 [1-9]/);
+    assert.ok(!JSON.stringify(lines).includes("ran on their machine"), "not shown to them");
     assert.equal((await web("/web/thread/stop", { id: slow.id })).status, 400, "nothing running to stop");
+  });
+
+  await step("a permission the machine holds is on the waiting list with Allow / Deny; the button resolves it and clears the item", async () => {
+    const waitingList = async () => (await web("/web/waiting")).data;
+    const held = await send("机器派活 PERM:execute 跑一下");
+    const item = await until(async () => (await waitingList()).items.find((i) => i.thread === held.id && i.kind === "permission"), "the permission in the list");
+    assert.match(item.perm, /^p_[0-9a-f]{10}$/);
+    assert.ok(item.line && item.title);
+    assert.equal((await web("/web/waiting/permission", { id: "p_0000000000", allow: true })).status, 409, "an unknown one");
+    assert.equal((await web("/web/waiting/permission", { id: item.perm })).status, 400);
+    const decided = await web("/web/waiting/permission", { id: item.perm, allow: true });
+    assert.equal(decided.status, 200);
+    const done = await until(async () => { const v = await threadOf(held.id); return v.status === "done" && v; }, "done after Allow");
+    assert.match(done.lines.at(-1).text, /perm=allow/);
+    assert.ok(!(await waitingList()).items.some((i) => i.kind === "permission"), "the item is gone");
+    assert.equal((await web("/web/waiting/permission", { id: item.perm, allow: false })).status, 409, "answered once");
+    await settled();
   });
 
   await step("revoked from the settings page: the runner is told 401 and stops", async () => {

@@ -721,10 +721,15 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
       <div class="tgroup" aria-label="等你的">
         <p class="group-title">等你 <span x-text="waitList.items.length || ''"></span></p>
         <template x-for="item in waitList.items" :key="item.id">
-          <div class="trow" :class="{ ask: item.kind === 'ask' }" x-data="{ more: false }">
-            <span class="top-line"><span class="t" x-text="item.title"></span><span class="pill" :class="item.kind === 'ask' ? 'hot' : 'bad'" x-text="waitingKind(item)"></span></span>
+          <div class="trow" :class="{ ask: item.kind === 'ask' || item.kind === 'permission' }" x-data="{ more: false }">
+            <span class="top-line"><span class="t" x-text="item.title"></span><span class="pill" :class="item.kind === 'stuck' ? 'bad' : 'hot'" x-text="waitingKind(item)"></span></span>
             <span class="sub"><span class="what" :class="{ more }" role="button" tabindex="0" :aria-expanded="more" title="点开看全文" @click="more = !more" @keydown.enter.prevent="more = !more" @keydown.space.prevent="more = !more" x-text="item.line"></span><span x-text="fmt(item.at)"></span></span>
+            <span class="sub" x-show="item.detail"><span class="what more" x-text="item.detail"></span></span>
             <span class="links">
+              <template x-if="item.kind === 'permission'"><span class="links">
+                <button class="btn small primary" type="button" :disabled="Boolean(choosing)" @click="waitingPermission(item, true)">允许</button>
+                <button class="btn small" type="button" :disabled="Boolean(choosing)" @click="waitingPermission(item, false)">拒绝</button>
+              </span></template>
               <template x-for="(option, i) in item.options" :key="option">
                 <button class="btn small" :class="i === 0 && 'primary'" type="button" :disabled="Boolean(choosing)" @click="waitingAnswer(item, option)" x-text="option"></button>
               </template>
