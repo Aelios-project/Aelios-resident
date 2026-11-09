@@ -1073,7 +1073,6 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
                 <div class="inline"><span x-text="box.name"></span><span class="spacer"></span><span class="pill" :class="box.online ? 'ok' : ''" x-text="boxState(box)"></span>
                   <button class="icon-btn sm danger" type="button" :disabled="boxes.busy" @click="boxRevoke(box)" title="撤销这台盒子" aria-label="撤销这台盒子"><i class="i i-trash" aria-hidden="true"></i></button></div>
                 <p class="hint" x-text="'插头：' + (box.plugs.length ? box.plugs.join('、') : '还没连上过')"></p>
-                <template x-for="why in boxUnavailable(box)" :key="why"><p class="error" x-text="'用不了 · ' + why"></p></template>
               </div>
             </template>
             <template x-for="choice in boxChoices()" :key="choice.plug">
