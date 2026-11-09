@@ -1075,7 +1075,7 @@ function resident() {
       if (this.pics.length) payload.pictures = this.pics.map(function (pic) { return { data: pic.data }; });
       if (this.docs.length) payload.files = this.docs.map(function (doc) { return { name: doc.name, data: doc.data }; });
       if (this.quote) payload.quote = this.quote.id;
-      var shown = { text: this.draft.trim(), pics: this.pics.map(function (pic) { return pic.url; }), quote: this.quote };
+      var shown = { text: this.draft.trim(), pics: this.pics.map(function (pic) { return pic.url; }), files: this.docs.map(function (doc) { return { name: doc.name, size: doc.size }; }), quote: this.quote };
       this.draft = '';
       this.pics = [];
       this.docs = [];
@@ -1085,7 +1085,7 @@ function resident() {
       return this.send(payload, shown);
     },
     async send(payload, shown) {
-      var item = Object.assign({ tid: 'local_' + (++seq), at: Date.now(), state: 'sending', error: '', text: '', pics: [], quote: null, voice: null, sticker: null }, shown,
+      var item = Object.assign({ tid: 'local_' + (++seq), at: Date.now(), state: 'sending', error: '', text: '', pics: [], files: [], quote: null, voice: null, sticker: null }, shown,
         { payload: payload, known: this.lines.map(function (line) { return line.id; }) });
       this.outbox.push(item);
       this.sending += 1;
@@ -1113,7 +1113,7 @@ function resident() {
     },
     retry(item) {
       this.dropLocal(item.tid);
-      var shown = { text: item.text, pics: item.pics, quote: item.quote, voice: item.voice, sticker: item.sticker };
+      var shown = { text: item.text, pics: item.pics, files: item.files, quote: item.quote, voice: item.voice, sticker: item.sticker };
       return this.send(item.payload, shown);
     },
     keydown(event) {

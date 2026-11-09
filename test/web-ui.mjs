@@ -6,7 +6,7 @@ const html = readFileSync('public/index.html', 'utf8');
 const code = readFileSync('public/app.js', 'utf8');
 const markdown = readFileSync('public/markdown.js', 'utf8');
 // The parts app.js mixes into the page's state, as the page loads them.
-const mixins = { groupPage: 'public/group.js', machinePage: 'public/machine.js', waitingPage: 'public/waiting.js' };
+const mixins = { groupPage: 'public/group.js', machinePage: 'public/machine.js', waitingPage: 'public/waiting.js', attachPage: 'public/attach.js' };
 assert.ok(html.includes('<script src="/app.js"></script>'), 'the page loads its script from /app.js');
 for (const file of Object.values(mixins)) assert.ok(html.includes(`<script src="/${file.slice('public/'.length)}"></script>`), `the page loads ${file}`);
 const resized = [];
@@ -903,7 +903,21 @@ answer = { status: 'interrupted' };
 talk.draft = '喂';
 await talk.sendDraft();
 assert.match(talk.outbox[0].error, /没回出来（interrupted）/, 'a reply that did not finish says so');
-console.log('PASS words, pictures, a quote and stickers go in one /web/say; each shows at once and gives way to its own copy; a failed one is sent again');
+// A file she attaches shows as a card at once, and on the server's copy of her line (never under its replies).
+answer = { status: 'completed' };
+talk.docs = [{ name: '交接文档.md', size: 2048, data: 'BBBB' }];
+const withFile = talk.sendDraft();
+assert.deepEqual(copy(said.at(-1)), ['/web/say', { text: '', files: [{ name: '交接文档.md', data: 'BBBB' }] }]);
+assert.deepEqual(copy(talk.outbox.at(-1).files), [{ name: '交接文档.md', size: 2048 }], 'the file shows before the server has it');
+assert.equal(talk.docs.length, 0, 'the box is cleared');
+serverLines = [...talk.lines, { id: 'u5', role: 'user', text: '', kind: 'chat', via: 'web', at: 7, attached: [{ name: '交接文档.md', size: 2048 }] }];
+await withFile;
+const herRow = html.slice(html.indexOf('<!-- her message -->'), html.indexOf('<!-- what she sent from here'));
+const localRow = html.slice(html.indexOf('<!-- what she sent from here'), html.indexOf('<footer class="compose"'));
+assert.ok(herRow.includes('x-for="(f, i) in row.line.attached || []"') && herRow.includes('x-text="f.name"'), 'her line shows its files');
+assert.ok(localRow.includes('x-for="(f, i) in row.item.files"'), 'what she just sent shows its files');
+assert.equal(html.match(/row\.line\.attached/g).length, 1, 'files are drawn in one place only');
+console.log('PASS words, pictures, files, a quote and stickers go in one /web/say; each shows at once and gives way to its own copy; a failed one is sent again');
 
 // Quoting from the long-press menu, and how a voice message's length reads.
 talk.lines = [{ id: 'a9', role: 'assistant', text: '  好多\n话  ', kind: 'chat', via: 'web', at: 5 }, { id: 'u9', role: 'user', text: '', kind: 'chat', via: 'web', at: 6, voice: { key: null, seconds: 3 } }];

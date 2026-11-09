@@ -252,9 +252,6 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
                   </template>
                 </div>
               </template>
-              <template x-if="row.line.attached && row.line.role === 'user'">
-                <div class="docs"><template x-for="(d, i) in row.line.attached" :key="i"><span class="doc" x-text="d.name + ' · ' + fileSize(d.size)"></span></template></div>
-              </template>
               <template x-for="(s, i) in stickersOf(row.line)" :key="i">
                 <div class="sticker">
                   <template x-if="s.video"><video :src="s.url" autoplay loop muted playsinline aria-label="表情包"></video></template>
@@ -336,6 +333,9 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
               <template x-if="row.line.voice">
                 <div class="said" x-text="(row.line.voice.missed ? '（没听清）' : row.line.text) + (row.line.at ? ' · ' + clock(row.line.at) : '')"></div>
               </template>
+              <template x-for="(f, i) in row.line.attached || []" :key="i">
+                <div class="page-card mine"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg></span><span class="txt"><b x-text="f.name"></b><span x-text="sizeText(f.size)"></span></span></div>
+              </template>
               <template x-for="(s, i) in stickersOf(row.line)" :key="i">
                 <div class="sticker">
                   <template x-if="s.video"><video :src="s.url" autoplay loop muted playsinline aria-label="表情包"></video></template>
@@ -369,6 +369,9 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
                   <span class="len" x-text="voiceLen(row.item.voice)"></span>
                 </div>
               </template>
+              <template x-for="(f, i) in row.item.files" :key="i">
+                <div class="page-card mine"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg></span><span class="txt"><b x-text="f.name"></b><span x-text="sizeText(f.size)"></span></span></div>
+              </template>
               <template x-if="row.item.sticker">
                 <div class="sticker">
                   <template x-if="row.item.sticker.video"><video :src="row.item.sticker.url" autoplay loop muted playsinline aria-label="表情包"></video></template>
@@ -381,7 +384,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
                   <span class="txt" x-text="row.item.text"></span>
                 </div>
               </template>
-              <div class="said" x-show="row.item.state === 'sending' && (row.item.voice || row.item.pics.length)" x-text="row.item.voice ? '在听…' : '在发…'"></div>
+              <div class="said" x-show="row.item.state === 'sending' && (row.item.voice || row.item.pics.length || row.item.files.length)" x-text="row.item.voice ? '在听…' : '在发…'"></div>
               <template x-if="row.item.state === 'failed'">
                 <div class="retry"><span x-text="row.item.error || '没发出去'"></span><button type="button" @click="retry(row.item)" aria-label="重发">!</button></div>
               </template>
