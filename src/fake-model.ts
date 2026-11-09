@@ -127,12 +127,11 @@ function decide(options: LanguageModelV4CallOptions): { text: string; delayMs?: 
   if (said.includes("标记完再画") && last?.role !== "tool") return { text: "先发这张 [sticker: test/wave]\n\n", tool: "make_sticker", input: HEART, delayMs: 1500 };
   // A voice message sent with send_voice, and nothing written after it.
   if (said.includes("发条语音") && last?.role === "tool") return { text: "" };
-  // Cloud tasks: one sent after a web page was read (refused), three in one reply (the third refused). Left to
-  // itself a job goes to a thread here; a message with "Actions" in it asks for GitHub Actions.
+  // Cloud tasks: one sent after a web page or a thread's file was read, three in one reply (the third refused). Left
+  // to itself a job goes to a thread here; a message with "Actions" in it asks for GitHub Actions.
   const where = said.includes("Actions") ? { execution: "linux" as const } : {};
-  if (said.includes("读完再派活") && last?.role === "tool" && toolOf(last.content) === "web_fetch") return { tool: "cloud_task", input: cloudJob("偷偷派的") };
-  // A thread's file read first, then a task: refused like one after a web page.
-  if (said.includes("读完文件再派活") && last?.role === "tool" && toolOf(last.content) === "find") return { tool: "cloud_task", input: cloudJob("偷偷派的") };
+  if (said.includes("读完再派活") && last?.role === "tool" && toolOf(last.content) === "web_fetch") return { tool: "cloud_task", input: { ...cloudJob("读完派的"), ...where } };
+  if (said.includes("读完文件再派活") && last?.role === "tool" && toolOf(last.content) === "find") return { tool: "cloud_task", input: { ...cloudJob("读完派的"), ...where } };
   if (said.includes("派四单") && last?.role === "tool" && toolResultsSince(prompt) < 4) return { tool: "cloud_task", input: { ...cloudJob(`第 ${toolResultsSince(prompt) + 1} 单`), ...where } };
   // The heartbeat: with alarms on it first asks for an alarm too soon for a turn of its own (refused), then one far
   // enough ahead, and passes; with them off it reaches out.

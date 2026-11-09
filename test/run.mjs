@@ -1625,11 +1625,9 @@ if (phase === "tasks" || phase === "tasks-quiet" || phase === "tasks-roles") {
       assert.equal((await fires()).length, firesBefore + 2);
     });
 
-    await step("at most three tasks in one reply, and none once a web page has been read in that turn", async () => {
+    await step("at most three tasks in one reply", async () => {
       const before = (await fires()).length;
       assert.match(await ask("Actions派四单"), /at most 3 tasks per reply/);
-      assert.equal((await fires()).length, before + 3);
-      assert.match(await ask("读完再派活"), /has read a web page/);
       assert.equal((await fires()).length, before + 3);
       // From a thread's report, only that thread is carried on: anything new waits for her.
       const one = sentJob((await fires()).at(-1));
@@ -1753,7 +1751,6 @@ if (phase === "tasks" || phase === "tasks-quiet" || phase === "tasks-roles") {
     });
 
     await step("the resident finds its threads again by their words and their files' names, reads a file, and searches the chat", async () => {
-      const today = (await tasks()).today;
       const found = await ask("找找线程 page.html");
       assert.ok(found.includes(`"id":"${localThread}"`) && found.includes('"files":["/page.html"]'), found);
       assert.ok(!found.includes(`"id":"${first.id}"`), "a thread without those words is left out");
@@ -1773,8 +1770,6 @@ if (phase === "tasks" || phase === "tasks-quiet" || phase === "tasks-roles") {
       assert.ok(read.includes('"path":"/page.html"') && read.includes("短标题"), read);
       assert.match(await ask(`看看线程文件 ${localThread} /nope.txt`), /No file \/nope\.txt in that thread/);
       assert.match(await ask(`看看线程文件 ${first.id} page.html`), /has no files here/);
-      assert.match(await ask(`读完文件再派活 ${localThread}`), /has read a web page, a thread's file/);
-      assert.equal((await tasks()).today, today, "nothing went out");
 
       // Her three questions about the tools, not this one, which has the words too.
       const searched = await ask("翻翻聊天 云端工具");
@@ -1957,6 +1952,31 @@ if (phase === "tasks" || phase === "tasks-quiet" || phase === "tasks-roles") {
       assert.deepEqual(removed.roles.map((role) => role.name), ["coder", "reviewer", "researcher"]);
     });
 
+    // Here, not in the tasks stage: that one uses all ten of the day.
+    await step("a task still goes out in a turn that first read a web page, or a thread's file", async () => {
+      const today = (await tasks()).today;
+      let thread = "";
+      for (const text of ["读完再派活", "读完文件再派活"]) {
+        const before = (await sent()).length;
+        // A long note comes in more than one message, so wait for what is said, not for a count.
+        const seen = async (pattern) => {
+          const end = Date.now() + 30000;
+          for (;;) {
+            const said = (await sent()).slice(before).join("\n");
+            if (pattern.test(said)) return said;
+            if (Date.now() > end) assert.fail(said);
+            await sleep(300);
+          }
+        };
+        await post(`${text} ${thread}`.trim());
+        const out = await seen(/"title":"读完派的","runs":"local","session_url":"","note":"Sent\. Its result comes back to you later as a note\."/);
+        const id = out.match(/"task":"(t_[0-9a-f]{10})","title":"读完派的"/)?.[1];
+        assert.ok(id, out);
+        await seen(new RegExp(`your cloud task ${id} "读完派的" reported back: it is done`));
+        thread ||= id;
+      }
+      assert.equal((await tasks()).today, today + 2);
+    });
   }
 
   if (phase === "tasks-quiet") {
