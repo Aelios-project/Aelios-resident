@@ -800,15 +800,7 @@ export class Resident extends Think<Env> {
       // The box keeps one live Kiro session for the resident's own conversation, none for work outside it.
       ...(auxiliary ? {} : { conversation: this.residentId }),
       send: (body) => boxTurn(this.env, this.residentId, "kiro", body),
-      // Kiro reports credits, not tokens: the running total is kept, and the turn gets a row in the usage timeline.
-      credits: (credits) => {
-        this.recordCredits(credits, id);
-        this.ctx.waitUntil(
-          this.ctx.storage
-            .get<{ total: number }>("kiro_credits")
-            .then((held) => this.ctx.storage.put("kiro_credits", { total: (held?.total ?? 0) + credits, last: credits, at: Date.now() }))
-        );
-      },
+      credits: (credits) => this.recordCredits(credits, id),
       ...(memory && !auxiliary ? this.memoryHooks(memory, id) : {})
     });
   }

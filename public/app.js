@@ -2033,10 +2033,10 @@ function resident() {
     },
     totalCost(t) {
       if (!t) return '…';
-      if (t.calls && t.unpriced === t.calls) return t.credits ? this.creditsText(t.credits) : '没有价格';
+      if (!t.cost && t.credits) return this.creditsText(t.credits);
+      if (t.calls && t.unpriced === t.calls) return '没有价格';
       return this.money(t.cost);
     },
-    // Kiro reports credits, not tokens or cache hits.
     creditsText(n) {
       return n.toFixed(n >= 10 ? 1 : n >= 1 ? 2 : 3) + ' credits';
     },
@@ -2052,13 +2052,16 @@ function resident() {
     },
     totalTokens(t) {
       if (!t) return '';
-      var tokens = 'in ' + this.compact(t.input + t.cacheRead + t.cacheWrite) + ' · out ' + this.compact(t.output);
-      return t.credits ? (t.input + t.cacheRead + t.cacheWrite + t.output ? tokens + ' · ' : '') + this.creditsText(t.credits) : tokens;
+      var all = t.input + t.cacheRead + t.cacheWrite;
+      var parts = all + t.output || !t.credits ? ['in ' + this.compact(all) + ' · out ' + this.compact(t.output)] : [];
+      if (t.cost && t.credits) parts.push(this.creditsText(t.credits));
+      return parts.join(' · ');
     },
     usageToday() {
       var t = this.usage.totals && this.usage.totals.today;
       if (!t) return '';
-      return '今天约 ' + this.totalCost(t) + ' · cache hit ' + this.hitText(t);
+      var credits = t.cost && t.credits ? ' + ' + this.creditsText(t.credits) : '';
+      return '今天约 ' + this.totalCost(t) + credits + ' · cache hit ' + this.hitText(t);
     },
     kindText(row) {
       var kind = { chat: '聊天', letter: '写交接信', checkin: '定时找你', heartbeat: '心跳', alarm: '闹钟', task: '线程交回', worker: '线程干活',
@@ -2068,7 +2071,6 @@ function resident() {
     },
     rowNums(row) {
       var n = function (v) { return v.toLocaleString('en-US'); };
-      if (row.credits) return this.creditsText(row.credits) + '（Kiro 不报 token 和缓存）';
       var write = 'write ' + n(row.cacheWrite) + (!row.cacheWrite ? '' : row.cacheWrite1h === row.cacheWrite ? ' (1h)' : row.cacheWrite1h ? ' (1h ' + n(row.cacheWrite1h) + ')' : ' (5m)');
       return 'new ' + n(row.input) + ' · read ' + n(row.cacheRead) + ' · ' + write + ' · out ' + n(row.output) + (row.reasoning ? ' (think ' + n(row.reasoning) + ')' : '');
     },

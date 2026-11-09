@@ -126,7 +126,7 @@ export function creditsEntry(credits: number, model: string, label: UsageLabel, 
 /** One row as the page shows it, with what it cost at list price (null when the model has no price). */
 export type UsageRow = UsageEntry & { id: number; cost: number | null };
 
-/** A span's sums. cost leaves out the calls to models without a price; unpriced counts those calls. */
+/** A span's sums. cost leaves out the calls to models without a price; unpriced counts those calls, except the ones with credits. */
 export type UsageTotals = {
   calls: number;
   input: number;
@@ -167,6 +167,7 @@ type Sum = {
   output: number;
   reasoning: number;
   credits: number;
+  credited: number;
 };
 
 function rowOf(row: Row): UsageRow {
@@ -215,7 +216,7 @@ export class UsageStore {
   totals(since: number): UsageTotals {
     const sums = this.sql<Sum>`SELECT model, (input + cache_read + cache_write > ${LONG_PROMPT}) AS is_long, COUNT(*) AS calls,
       SUM(input) AS input, SUM(cache_read) AS cache_read, SUM(cache_write) AS cache_write, SUM(cache_write_1h) AS cache_write_1h,
-      SUM(output) AS output, SUM(reasoning) AS reasoning, SUM(credits) AS credits
+      SUM(output) AS output, SUM(reasoning) AS reasoning, SUM(credits) AS credits, SUM(credits > 0) AS credited
       FROM res_usage WHERE at >= ${since} GROUP BY model, is_long`;
     const totals: UsageTotals = { calls: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0, credits: 0, cost: 0, unpriced: 0 };
     for (const sum of sums) {
@@ -228,7 +229,7 @@ export class UsageStore {
       totals.credits += sum.credits;
       const price = priceFor(sum.model, sum.is_long ? LONG_PROMPT + 1 : 0);
       if (!price) {
-        totals.unpriced += sum.calls;
+        totals.unpriced += sum.calls - sum.credited;
         continue;
       }
       totals.cost += costAt(price, { input: sum.input, cacheRead: sum.cache_read, cacheWrite: sum.cache_write, cacheWrite1h: sum.cache_write_1h, output: sum.output });
