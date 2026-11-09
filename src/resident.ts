@@ -146,6 +146,7 @@ import {
   type ThreadCard
 } from "./cloud-tasks";
 import { WaitingStore } from "./waiting-store";
+import { carryOver, markTakenOver, stillTakeable, unfinishedWithTitle } from "./takeover";
 import { MachineError, MachineStore, machineRecord, machineReply, type Ask, type Finished, type WorkKind } from "./machine";
 import { wakesResident } from "./machine-wake";
 import { ATTACH_MARK, ATTACH_MAX_FILES, keep, loadAll, loadFile, markedFile, type Attachment } from "./attachments";
@@ -1647,7 +1648,10 @@ export class Resident extends Think<Env> {
     if (typeof execution === "object") return execution;
     const id = this.activeTurn!.requestId;
     this.#turnTasks.set(id, (this.#turnTasks.get(id) ?? 0) + 1);
-    const job = role ? withRole(role, input.job) : input.job;
+    // A new thread on the machine whose title is an unfinished thread's takes that work over (takeover.ts).
+    const taken = !follows && execution === "machine" ? unfinishedWithTitle(this.cloudTasks(), input.title, (root) => this.machines().unsettled(root)) : null;
+    const sentJob = role ? withRole(role, input.job) : input.job;
+    const job = taken ? carryOver(sentJob, taken, this.cloudTasks()) : sentJob;
     const unasked = this.#theirTurns.has(id) ? 0 : follows!.unasked + 1;
     const files: Attachment[] = [];
     const sent = this.messages.filter((message) => message.role === "user").map((message) => textOf(message));
@@ -1663,7 +1667,12 @@ export class Resident extends Think<Env> {
       files
     );
     if ("error" in task) return { error: task.error };
-    return { task: task.id, title: task.title, runs: task.runs, session_url: task.sessionUrl, note: "Sent. Its result comes back to you later as a note." };
+    // startTask awaits scheduling: the old thread may have changed while the new work was being sent.
+    if (taken && stillTakeable(this.cloudTasks(), taken, (root) => this.machines().unsettled(root))) {
+      markTakenOver(this.cloudTasks(), taken, task.root);
+      this.machines().answered(taken.root);
+    }
+    return { task: task.id, title: task.title, runs: task.runs, session_url: task.sessionUrl, note: `Sent. Its result comes back to you later as a note.${taken ? ` It carries over the unfinished work of thread ${taken.root}.` : ""}` };
   }
 
   /** Adds a task and either starts it on a thread here or on GitHub Actions; sets a quiet check too. */
@@ -2181,6 +2190,7 @@ export class Resident extends Think<Env> {
     // On the machine their words go straight to its session, stopping a running turn (machine.ts).
     const started = await this.startTask({ title: tasks[0].title, job, repo: latest.repo, follows: latest.id, execution: latest.runs, direct: true }, latest, files);
     if ("error" in started) for (const file of files) this.media().remove(file.key);
+    else if (latest.runs === "machine") this.machines().answered(root); // their words answer what the thread asked
     return "error" in started ? started : this.webThread(root);
   }
 
@@ -4281,17 +4291,23 @@ export class Resident extends Think<Env> {
   async webChoose(taskId: string, choice: string): Promise<{ ok: true } | { error: string }> {
     const store = this.cloudTasks();
     const task = store.get(taskId);
-    if (!task || !store.choose(taskId, choice)) return { error: "这张卡已经不等你选了" };
+    // A machine ask can still be open when its task is no longer the thread's newest, or when it lists no options.
+    const open = task?.runs === "machine" && this.machines().asked(task.root, taskId);
+    if (!task || (!store.choose(taskId, choice) && !open)) return { error: "这张卡已经不等你选了" };
     if (task.runs === "local" || task.runs === "machine") {
       const said = await this.webThreadSay(task.root, choice);
       if (!("error" in said)) return { ok: true };
     }
     const sent = await this.webSay({ text: `关于「${task.title}」：${choice}` });
-    return "error" in sent ? sent : { ok: true };
+    if ("error" in sent) return sent;
+    if (task.runs === "machine") this.machines().answered(task.root, taskId);
+    return { ok: true };
   }
   /** She says a task that waits for her needs nothing more: its card stops asking. The resident is not told. */
   webSettle(taskId: string): { ok: true } | { error: string } {
-    return this.cloudTasks().settle(taskId) ? { ok: true } : { error: "这张卡已经不等你了" };
+    const task = this.cloudTasks().get(taskId);
+    const cleared = task?.runs === "machine" && this.machines().answered(task.root, taskId);
+    return this.cloudTasks().settle(taskId) || cleared ? { ok: true } : { error: "这张卡已经不等你了" };
   }
 
 
