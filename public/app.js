@@ -2033,8 +2033,15 @@ function resident() {
     },
     totalCost(t) {
       if (!t) return '…';
-      if (t.calls && t.unpriced === t.calls) return '没有价格';
+      if (t.calls && t.unpriced === t.calls) return t.credits ? this.creditsText(t.credits) : '没有价格';
       return this.money(t.cost);
+    },
+    // Kiro reports credits, not tokens or cache hits.
+    creditsText(n) {
+      return n.toFixed(n >= 10 ? 1 : n >= 1 ? 2 : 3) + ' credits';
+    },
+    rowCost(row) {
+      return row.credits ? this.creditsText(row.credits) : row.cost === null ? '没有价格' : '约 ' + this.money(row.cost);
     },
     totalCalls(t) {
       return t ? t.calls + ' 次' : '';
@@ -2045,7 +2052,8 @@ function resident() {
     },
     totalTokens(t) {
       if (!t) return '';
-      return 'in ' + this.compact(t.input + t.cacheRead + t.cacheWrite) + ' · out ' + this.compact(t.output);
+      var tokens = 'in ' + this.compact(t.input + t.cacheRead + t.cacheWrite) + ' · out ' + this.compact(t.output);
+      return t.credits ? (t.input + t.cacheRead + t.cacheWrite + t.output ? tokens + ' · ' : '') + this.creditsText(t.credits) : tokens;
     },
     usageToday() {
       var t = this.usage.totals && this.usage.totals.today;
@@ -2060,6 +2068,7 @@ function resident() {
     },
     rowNums(row) {
       var n = function (v) { return v.toLocaleString('en-US'); };
+      if (row.credits) return this.creditsText(row.credits) + '（Kiro 不报 token 和缓存）';
       var write = 'write ' + n(row.cacheWrite) + (!row.cacheWrite ? '' : row.cacheWrite1h === row.cacheWrite ? ' (1h)' : row.cacheWrite1h ? ' (1h ' + n(row.cacheWrite1h) + ')' : ' (5m)');
       return 'new ' + n(row.input) + ' · read ' + n(row.cacheRead) + ' · ' + write + ' · out ' + n(row.output) + (row.reasoning ? ' (think ' + n(row.reasoning) + ')' : '');
     },

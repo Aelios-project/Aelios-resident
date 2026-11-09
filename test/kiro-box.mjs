@@ -124,6 +124,23 @@ await step("a tool call stops the reply, the result answers it, and the same ses
   assert.equal(logged().filter((entry) => entry.prompt).length, 1, "the result went to the waiting call, not as a new prompt");
 });
 
+await step("a thought chunk goes on as a thought line; other updates are ignored", async () => {
+  const out = await turn({ messages: [said("User", "think please", "t1")] });
+  assert.deepEqual(out.lines, [{ thought: "Hmm. " }, { text: "Done." }, { done: { credits: 0.25 } }]);
+});
+
+await step("the Worker side: thought lines become a thinking block before the text, and old boxes still work", async () => {
+  const reply = (lines) => ({ send: async () => new Response(lines.map((line) => JSON.stringify(line)).join("\n") + "\n") });
+  const ask = (lines, stream) => worker.kiroFetch(reply(lines))("x", { method: "POST", body: JSON.stringify({ model: "auto", stream, system: "SYS", messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }] }) });
+  const lines = [{ thought: "Let me " }, { thought: "see." }, { text: "Hi" }, { done: { credits: 0.1, extra: "ignored" } }];
+  const ok = await (await ask(lines, false)).json();
+  assert.deepEqual(ok.content, [{ type: "thinking", thinking: "Let me see." }, { type: "text", text: "Hi" }]);
+  const streamed = await (await ask(lines, true)).text();
+  assert.match(streamed, /"type":"thinking"[\s\S]*thinking_delta[\s\S]*content_block_stop[\s\S]*"type":"text"/);
+  const thoughtOnly = await (await ask([{ thought: "Hm" }, { done: { credits: null } }], false)).json();
+  assert.deepEqual(thoughtOnly.content, [{ type: "thinking", thinking: "Hm" }]);
+});
+
 await step("the key is never echoed back, even when kiro-cli prints it", async () => {
   const out = await turn({ messages: [said("User", "fail please", "f1")] });
   assert.ok(out.lines.at(-1).error);

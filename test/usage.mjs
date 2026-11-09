@@ -181,4 +181,23 @@ assert.equal(next.rows.length, 2);
 assert.equal(next.more, false);
 assert.equal(next.rows[0].cost, null);
 assert.deepEqual(next.rows[0].tools, []);
+// Kiro reports credits, not tokens: a row of credits sums into the totals, and a table made before the column existed gains it.
+store.add(u.creditsEntry(0.25, "kiro/auto", label, t0 - 1000));
+store.add(u.creditsEntry(0.5, "kiro/auto", label, t0 - 500));
+assert.equal(u.creditsEntry(0, "kiro/auto", label, t0), null);
+assert.equal(store.totals(spans.today).credits, 0.75);
+assert.equal(store.totals(spans.today).unpriced, 2);
+assert.equal(store.rows(null, 1).rows[0].credits, 0.5);
+const old = new DatabaseSync(":memory:");
+const oldSql = (strings, ...values) => {
+  const statement = old.prepare(strings.join("?"));
+  if (statement.columns().length) return statement.all(...values);
+  statement.run(...values);
+  return [];
+};
+old.exec("CREATE TABLE res_usage (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, model TEXT NOT NULL, kind TEXT NOT NULL, via TEXT NOT NULL, step INTEGER NOT NULL, input INTEGER NOT NULL, cache_read INTEGER NOT NULL, cache_write INTEGER NOT NULL, cache_write_1h INTEGER NOT NULL, output INTEGER NOT NULL, reasoning INTEGER NOT NULL, tools TEXT NOT NULL)");
+old.exec("INSERT INTO res_usage VALUES (1, 5, 'm', 'chat', 'web', 0, 1, 0, 0, 0, 1, 0, '')");
+const migrated = new u.UsageStore(oldSql);
+assert.equal(migrated.rows(null).rows[0].credits, 0);
+console.log("PASS credits rows sum into the totals and an older table gets the column");
 console.log("PASS the store sums today, 7 and 30 days from her midnight, pages back by row, prices on reading, and drops rows older than 90 days");

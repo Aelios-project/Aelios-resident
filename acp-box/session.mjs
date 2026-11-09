@@ -93,8 +93,10 @@ export class Session {
     const credits = this.plug.credits(method, params);
     if (credits !== null) this.credits = credits;
     const update = params?.update;
-    if (method !== "session/update" || update?.sessionUpdate !== "agent_message_chunk") return;
-    if (update.content?.type === "text" && update.content.text) this.reply?.write({ text: update.content.text });
+    if (method !== "session/update" || update.content?.type !== "text" || !update.content.text) return;
+    // Thought chunks come from models that think (Kiro sends them when the model's reasoning is on).
+    if (update.sessionUpdate === "agent_message_chunk") this.reply?.write({ text: update.content.text });
+    else if (update.sessionUpdate === "agent_thought_chunk") this.reply?.write({ thought: update.content.text });
   }
 
   /** Streams the next reply to this /turn; settles when that reply ended (at calls, or at the end of the turn). */
