@@ -186,7 +186,8 @@ store.add(u.creditsEntry(0.25, "kiro/auto", label, t0 - 1000));
 store.add(u.creditsEntry(0.5, "kiro/auto", label, t0 - 500));
 assert.equal(u.creditsEntry(0, "kiro/auto", label, t0), null);
 assert.equal(store.totals(spans.today).credits, 0.75);
-assert.equal(store.totals(spans.today).unpriced, 2);
+assert.equal(store.totals(spans.today).unpriced, 0, "calls with credits are not counted as unpriced");
+assert.equal(store.totals(spans.week).unpriced, 1, "the model without a price is still counted");
 assert.equal(store.rows(null, 1).rows[0].credits, 0.5);
 const old = new DatabaseSync(":memory:");
 const oldSql = (strings, ...values) => {

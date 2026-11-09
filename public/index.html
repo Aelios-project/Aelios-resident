@@ -864,7 +864,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
           <span class="cost" x-text="rowCost(row)"></span>
         </div>
         <div class="small" x-text="row.model || '（没报模型名）'"></div>
-        <div class="small"><span x-text="rowNums(row)"></span><span style="color: var(--accent-text)" x-show="row.input + row.cacheRead + row.cacheWrite > 0" x-text="' · hit ' + hitText(row)"></span></div>
+        <div class="small" x-show="!row.credits"><span x-text="rowNums(row)"></span><span style="color: var(--accent-text)" x-show="row.input + row.cacheRead + row.cacheWrite > 0" x-text="' · hit ' + hitText(row)"></span></div>
         <div class="small" x-show="row.tools.length" x-text="'调了 ' + row.tools.join('、')"></div>
       </div>
     </template>
