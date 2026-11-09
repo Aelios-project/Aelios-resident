@@ -1439,7 +1439,7 @@ export class Resident extends Think<Env> {
   webMachineRevoke(runnerId?: string) { return machineReply(() => this.machines().revoke(runnerId)); }
   machineRegister(body: unknown, trusted: boolean) { return machineReply(() => this.machines().register(body, trusted)); }
 
-  /** The runner's own calls. A final receipt leaves a record in the conversation; it does not start a turn. */
+  /** The runner's own calls. A final receipt starts a turn of the resident's (machine-wake.ts) or leaves a record. */
   async machineRequest(token: string, action: "heartbeat" | "poll" | "receipt" | "progress" | "permission" | "file", body: unknown) {
     const machines = this.machines();
     if (action === "file") return machineReply(async () => this.machineFile(await machines.workFile(token, body)));
@@ -1447,7 +1447,7 @@ export class Resident extends Think<Env> {
     const finished = (answer.body as { finished?: Finished }).finished;
     if (finished) {
       delete (answer.body as { finished?: unknown }).finished;
-      // A job or mail that ended done or failed is told to them in the resident's own words, once; the rest stays a record.
+      // A turn that ended done or failed is told to them in the resident's own words, once; the rest stays a record.
       if (wakesResident(finished)) await this.tellAboutTask(finished.task, (task) => resultNote(task));
       else await this.machineNote(finished.task.id);
       await this.pushWaitingAsks();
@@ -3763,8 +3763,8 @@ export class Resident extends Think<Env> {
         about = null;
         continue;
       }
-      // A check-in it passed on says nothing; a group chat's answer was posted there.
-      if ((via === "checkin" && said === SKIP) || via === "group") continue;
+      // A check-in or a thread's report it passed on says nothing; a group chat's answer was posted there.
+      if (((via === "checkin" || via === "task") && said === SKIP) || via === "group") continue;
       const tasks = this.taskCards(message.parts as never, about);
       about = null;
       lines.push({

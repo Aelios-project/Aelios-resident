@@ -99,7 +99,7 @@ await test("another work cannot close a permission it did not report", async () 
   assert.equal(f.store.perms.pending().length, 1);
 });
 
-await test("a finished job or mail wakes the resident once; say, stopped and waiting do not", () => {
-  for (const kind of ["job", "mail"]) for (const status of ["done", "failed"]) assert.equal(wake.wakesResident({ kind, status }), true, `${kind} ${status}`);
-  for (const [kind, status] of [["say", "done"], ["say", "failed"], ["job", "stopped"], ["job", "needs_you"], ["mail", "needs_you"]]) assert.equal(wake.wakesResident({ kind, status }), false, `${kind} ${status}`);
+await test("a finished turn wakes the resident once, her own words to the thread too; stopped and waiting do not", () => {
+  for (const status of ["done", "failed"]) assert.equal(wake.wakesResident({ status }), true, status);
+  for (const status of ["stopped", "needs_you"]) assert.equal(wake.wakesResident({ status }), false, status);
 });

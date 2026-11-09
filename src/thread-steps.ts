@@ -10,7 +10,7 @@ export type StepKind = (typeof STEP_KINDS)[number];
 export type Step = { kind: StepKind; title: string };
 
 export const STEPS_KEPT = 10;
-export const STEP_TITLE_MAX = 80;
+export const STEP_TITLE_MAX = 200;
 
 /** A progress body, or an error text. Strict: a field the protocol does not name is refused. */
 export function progressOf(body: Record<string, unknown>): { workId: string; token: string; steps: Step[] } | string {

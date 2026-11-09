@@ -12,7 +12,7 @@
 // linux reports with progress lines and one result, posted to /tasks/<id>/… with the task's one-time code
 // (hands.mjs does it itself). A local thread reports through the host.
 
-import { NOTE_PREFIX } from "./prompts";
+import { NOTE_PREFIX, SKIP } from "./prompts";
 import type { Sql } from "./sticker-store";
 
 // What the resident sends out by itself in a day. An
@@ -281,7 +281,7 @@ export function resultNote(task: Task): string {
 <<<
 ${unfenced(task.summary)}${task.links.length ? `\nLinks: ${unfenced(task.links.join(" "))}` : ""}
 >>>${session}${task.choices?.length ? `\nOn the web page its card offers these answers as buttons: ${task.choices.map((choice) => `"${unfenced(choice)}"`).join(", ")}.` : ""}
-Tell them in your own words and briefly, with the links that matter.${where} If it needs them, ask. ${carryOn(task)})`;
+Tell them in your own words and briefly, with the links that matter.${where} If it needs them, ask. ${carryOn(task)}${task.direct ? ` They wrote to that thread themselves and read its reply there: if you have nothing to add, reply with just the four letters ${SKIP}.` : ""})`;
 }
 
 /** Whether a thread can be carried on in the turn its report came back in, without them asking (UNASKED_FOLLOW_UPS). */
@@ -331,7 +331,7 @@ export const TASK_DESCRIPTION =
   "- linux: a GitHub Actions run on their GitHub account, with a shell: installing, building, running tests, opening " +
   "pull requests; name the repository to change in repo.\n" +
   "- machine: the computer or server they paired with this resident, with a shell and their own files there. Its " +
-  "thread answers them itself, so its result comes back to you only as a record; a follow-up waits its turn there.\n" +
+  "thread answers them itself; when a turn of it ends you are told, and a follow-up waits its turn there.\n" +
   "Leave execution out and it goes to a thread here. Pick local for reading and writing that needs no repository; " +
   "pick linux when the job needs a shell and GitHub Actions is set up; pick machine when they ask for work on their own machine. " +
   "The answer says where it went, or which places are set up.";

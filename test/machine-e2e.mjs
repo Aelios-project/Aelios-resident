@@ -1,7 +1,8 @@
 // End to end: the local Worker, the real runner (Aelios-desktop, packages/runner) and its pretend ACP helper (test/fake-agent.mjs).
 // A job the resident sends goes to the machine and its words come back to the thread; her words to a running thread
 // stop the turn and go into the same session; an ASK: line makes the thread wait for her, and her answer resolves it.
-// A job that ends done or failed makes the resident tell them once; a stopped or waiting one only leaves a record (a note).
+// A turn that ends done or failed makes the resident tell them once (one she answered in the thread herself it may pass
+// on); a stopped or waiting one only leaves a record (a note).
 // Needs the Worker and the mock server, like test/run.mjs (a fresh Worker: delete .wrangler/state first):
 //   node test/mock-server.mjs & NO_PROXY=127.0.0.1 npx wrangler dev --config wrangler.test.jsonc --port 8787 &
 //   NO_PROXY=127.0.0.1 node test/machine-e2e.mjs
@@ -116,6 +117,12 @@ try {
     const [slow, hers] = prompts().slice(-2);
     assert.equal(slow.sessionId, hers.sessionId, "the same session");
     assert.ok(JSON.parse(readFileSync(store, "utf8")).log.some((e) => e.event === "session/cancel"));
+    // What the thread answered her wakes the resident too: here it has something to say about it.
+    await settled();
+    const replies = await assistantLines();
+    assert.equal((await web("/web/thread/say", { id: t.id, text: "告诉住户" })).status, 200);
+    await until(async () => (await assistantLines()) === replies + 1, "the resident to hear of it");
+    assert.match((await web("/web/messages")).data.data.filter((line) => line.role === "assistant").at(-1).text, /云端回来了.*done: 告诉住户/s);
   });
 
   await step("a file sent into a thread shows as its name in her line, never its content, and is refused without a name or bytes", async () => {
