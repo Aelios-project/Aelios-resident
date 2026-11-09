@@ -9,7 +9,7 @@
 //
 // The resident's tools go along. Kiro calls one through the box's MCP server, the reply stops there as any model's
 // does, Think runs it, and the next call brings the result, which the same Kiro session goes on from.
-// shortcut: pictures go as "[picture]"; send them when the box passes images to the helper.
+// Pictures travel with their message as ACP image blocks; both the resident and the box must support them.
 //
 // To the AI SDK this is an Anthropic model whose requests never leave the Worker but for the box: the box's NDJSON
 // is handed back as the Messages API's own stream events.

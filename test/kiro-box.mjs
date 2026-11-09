@@ -189,6 +189,65 @@ await step("the Worker side: messages with marks and tools go out; tool lines co
   assert.ok(sent.every((body) => !("key" in body) && !("helper" in body) && !JSON.stringify(body).includes(KEY)), "no credential in anything sent to the box");
 });
 
+await step("pictures reach ACP on seed and new turns; edited picture bytes invalidate the session", async () => {
+  const image = (data, media_type = "image/png") => ({ type: "image", source: { type: "base64", media_type, data } });
+  const user = (...content) => ({ role: "user", content });
+  const words = (text) => ({ type: "text", text });
+  const sent = [];
+  const fetch = worker.kiroFetch({ conversation: "pictures", send: async (body) => {
+    const data = JSON.parse(body);
+    sent.push(data);
+    const { lines } = await turn(data);
+    return new Response(lines.map((line) => JSON.stringify(line)).join("\n") + "\n");
+  } });
+  const ask = async (messages) => {
+    const response = await fetch("x", { body: JSON.stringify({ model: "auto", system: "SYS", messages }) });
+    assert.equal(response.status, 200, await response.clone().text());
+    return response.json();
+  };
+  reset();
+  const first = user(words("look at these"), image("AAAA"), image("BBBB", "image/jpeg"));
+  await ask([first]);
+  const expected = [{ type: "image", data: "AAAA", mimeType: "image/png" }, { type: "image", data: "BBBB", mimeType: "image/jpeg" }];
+  assert.deepEqual(sent[0].messages[0].images, expected);
+  assert.deepEqual(logged().find((entry) => entry.prompt).prompt.images, expected, "bytes and MIME types reach the helper, not just markers");
+  const assistant = { role: "assistant", content: [words("Hello there")] };
+  reset();
+  await ask([first, assistant, user(words("again"))]);
+  assert.equal(logged().filter((entry) => entry.start).length, 0);
+  assert.equal(logged().find((entry) => entry.prompt).prompt.images, undefined, "known images are not resent");
+  reset();
+  await ask([first, assistant, user(words("again")), assistant, user(image("CCCC"))]);
+  assert.deepEqual(logged().find((entry) => entry.prompt).prompt.images, [{ type: "image", data: "CCCC", mimeType: "image/png" }], "image-only turns work");
+  reset();
+  const edited = user(words("look at these"), image("DDDD"), image("BBBB", "image/jpeg"));
+  await ask([edited, assistant, user(words("again"))]);
+  assert.notEqual(sent[0].messages[0].mark, sent.at(-1).messages[0].mark, "the same text with a changed picture has a different mark");
+  assert.equal(logged().filter((entry) => entry.start).length, 1, "edited history seeds a new session");
+  assert.equal(logged().find((entry) => entry.prompt).prompt.images[0].data, "DDDD");
+});
+
+await step("prompt images follow their own message and leave with trimmed history; malformed images are rejected", () => {
+  const image = { type: "image", data: "AAAA", mimeType: "image/png" };
+  const messages = [{ ...said("User", "first", "1"), images: [image] }, said("You", "reply", "2"), { ...said("User", "", "3"), images: [image] }];
+  const seed = prompt.plan(messages, null).seed;
+  assert.equal(seed[1].text, "User: first");
+  assert.deepEqual(seed[2], image);
+  assert.equal(seed[3].text, "\n\nYou: reply");
+  assert.deepEqual(seed.at(-1), image);
+  const trimmed = prompt.plan([messages[0], said("User", "x".repeat(prompt.PROMPT_MAX_CHARS + 1), "4")], null).seed;
+  assert.ok(!trimmed.some((block) => block.type === "image"), "an image outside the retained text window is omitted");
+  assert.equal(prompt.messagesProblem([{ ...messages[0], images: [{ type: "image", data: 42 }] }], true), "a message has malformed images");
+  assert.equal(prompt.messagesProblem([said("User", "legacy", "1")], true), null, "text-only old senders still work");
+});
+
+await step("a helper without image capability fails visibly without sending a prompt", async () => {
+  reset();
+  const out = await turn({ system: "NO_IMAGES", messages: [{ ...said("User", "look", "1"), images: [{ type: "image", data: "AAAA", mimeType: "image/png" }] }] });
+  assert.match(out.lines.at(-1).error, /does not support image prompts/);
+  assert.equal(logged().filter((entry) => entry.prompt).length, 0);
+});
+
 await step("dropping a session stops its process and removes its home", async () => {
   const live = [...sessions.byAddress.values()];
   assert.ok(live.length >= 1);

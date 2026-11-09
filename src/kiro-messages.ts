@@ -1,4 +1,4 @@
-// The conversation as the ACP box takes it (acp-box/prompt.mjs): each message as one line of text by "User" or "You",
+// The conversation as the ACP box takes it (acp-box/prompt.mjs): each message as text by "User" or "You" with optional images,
 // with a mark (a hash of the conversation up to it) so the box can tell what its live session already heard. Tool
 // calls and their results are short lines of text: the helper only takes the calls it made itself back, and those
 // arrive as `results`.
@@ -6,7 +6,21 @@
 import { blocksOf, saidIn, sha256, type Block, type Message } from "./claude-code";
 import { isNote } from "./prompts";
 
-export type BoxMessage = { who: "User" | "You"; text: string; mark: string };
+export type BoxImage = { type: "image"; data: string; mimeType: string };
+export type BoxMessage = { who: "User" | "You"; text: string; mark: string; images?: BoxImage[] };
+
+/** Pictures stay binary content, including a past tool result when a session must be seeded again. */
+function imagesOf(content: unknown): BoxImage[] {
+  return blocksOf(content).flatMap((block): BoxImage[] => {
+    if (block.type === "tool_result") return imagesOf(block.content);
+    if (block.type !== "image") return [];
+    const source = block.source as { type?: unknown; data?: unknown; media_type?: unknown } | undefined;
+    if (source?.type !== "base64" || typeof source.data !== "string" || !source.data || typeof source.media_type !== "string" || !source.media_type.startsWith("image/")) {
+      throw new Error("Kiro pictures require base64 image data and an image media type");
+    }
+    return [{ type: "image", data: source.data, mimeType: source.media_type }];
+  });
+}
 
 const TOOL_TEXT_MAX = 4000;
 const clip = (text: string) => (text.length > TOOL_TEXT_MAX ? `${text.slice(0, TOOL_TEXT_MAX)}…` : text);
@@ -49,8 +63,11 @@ export async function boxMessages(messages: Message[]): Promise<BoxMessage[]> {
   for (const message of messages) {
     const who = message.role === "assistant" ? "You" : "User";
     const text = textOf(message);
-    mark = await sha256(`${mark}\n${who}\n${text}`);
-    out.push({ who, text, mark });
+    const images = who === "User" ? imagesOf(message.content) : [];
+    // Text-only marks stay compatible; changing only a picture must invalidate the live session too.
+    const pictureMark = images.length ? `\n${await sha256(JSON.stringify(images))}` : "";
+    mark = await sha256(`${mark}\n${who}\n${text}${pictureMark}`);
+    out.push({ who, text, mark, ...(images.length ? { images } : {}) });
   }
   return out;
 }
