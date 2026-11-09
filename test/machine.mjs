@@ -152,14 +152,37 @@ await test("a lapsed lease is unconfirmed, asked about, never handed out again; 
   try {
     Date.now = () => now() + 6 * 60_000;
     f.store.expire();
-    assert.equal(f.tasks.get(task.id).status, "needs_you");
-    assert.equal(f.store.asks(task.root)[0].key, `lease:${work.workId}`);
+    // A failure the owner opens (reason "interrupted"), not a question.
+    assert.equal(f.tasks.get(task.id).status, "failed");
+    assert.equal(f.tasks.get(task.id).reason, "interrupted");
+    assert.deepEqual(f.store.asks(task.root), []);
     assert.deepEqual((await f.store.poll(f.token, { claimKey: "ck_99999999" })).work, null);
     // The runner does not know the server's lease ask, so its final carries no resolve for it.
     const late = await f.store.receipt(f.token, final(work));
     assert.equal(late.finished.task.status, "done");
     assert.deepEqual(f.store.asks(task.root), []);
   } finally { Date.now = now; }
+});
+
+await test("an answered ask leaves the list at once, only that task's; the runner may still resolve it later", async () => {
+  const f = await paired();
+  const task = f.add();
+  const { work } = await f.store.poll(f.token, { claimKey: "ck_77777777" });
+  await f.store.receipt(f.token, final(work, { status: "needs_you", ask: { key: "q1", question: "Which?" } }));
+  assert.equal(f.store.asked(task.root, task.id), true);
+  assert.equal(f.store.answered(task.root, "t_other"), false, "another task's answer changes nothing");
+  assert.equal(f.store.answered(task.root, task.id), true);
+  assert.deepEqual(f.store.allAsks(), []);
+  assert.equal(f.store.answered(task.root), false, "nothing left to clear");
+});
+
+await test("a failed final with reason interrupted is accepted", async () => {
+  const f = await paired();
+  const task = f.add();
+  const { work } = await f.store.poll(f.token, { claimKey: "ck_66666666" });
+  await f.store.receipt(f.token, final(work, { status: "failed", reason: "interrupted", summary: "The runner was stopped." }));
+  assert.equal(f.tasks.get(task.id).reason, "interrupted");
+  assert.deepEqual(f.store.asks(task.root), []);
 });
 
 await test("readMachineJson: over 16 KB is a 413, not JSON is a 400", async () => {

@@ -45,6 +45,7 @@ await test("the runner's reason code decides what a failure asks of the owner; t
   assert.equal(waiting.stuckAction("anything", "needs_login"), "settings");
   assert.equal(waiting.stuckAction("anything", "missing_key"), "settings");
   assert.equal(waiting.stuckAction("anything", "permission_denied"), "open");
+  assert.equal(waiting.stuckAction("anything", "interrupted"), "open", "a stopped runner is a stuck item to open");
   for (const reason of ["helper_missing", "workspace_denied", "error"]) assert.equal(waiting.stuckAction("The API key was rejected.", reason), null, "a code that is not actionable wins over the words");
   assert.equal(waiting.stuckAction("The API key was rejected.", ""), "settings", "old rows: keywords");
   const { items } = waiting.build(input({ threads: [thread("a", { status: "failed", summary: "x", reason: "needs_login" }), thread("b", { status: "failed", summary: "x", reason: "error" })] }));

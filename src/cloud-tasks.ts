@@ -584,8 +584,8 @@ export class TaskStore {
   }
 
   /** A task's state moved by the world outside (a pull request merged): not a report, so no notice and no turn. */
-  moved(id: string, status: TaskStatus, summary: string): void {
-    this.sql`UPDATE res_tasks SET status = ${status}, summary = ${summary}, choices = ${"[]"}, reason = ${""}, chosen = ${""}, updated_at = ${Date.now()} WHERE id = ${id}`;
+  moved(id: string, status: TaskStatus, summary: string, reason = ""): void {
+    this.sql`UPDATE res_tasks SET status = ${status}, summary = ${summary}, choices = ${"[]"}, reason = ${reason}, chosen = ${""}, updated_at = ${Date.now()} WHERE id = ${id}`;
   }
 
   /**
