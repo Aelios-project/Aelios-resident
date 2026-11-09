@@ -79,7 +79,8 @@ export class Session {
       }
     }).start();
     try {
-      await this.conn.request("initialize", { protocolVersion: PROTOCOL_VERSION, clientCapabilities: {}, clientInfo: { name: "acp-box", version: "1" } }, 30_000);
+      const initialized = await this.conn.request("initialize", { protocolVersion: PROTOCOL_VERSION, clientCapabilities: {}, clientInfo: { name: "acp-box", version: "1" } }, 30_000);
+      this.supportsImages = initialized.agentCapabilities?.promptCapabilities?.image === true;
       const created = await this.conn.request("session/new", { cwd: join(this.home, "work"), mcpServers: [] }, 60_000);
       if (typeof created.sessionId !== "string" || !created.sessionId) throw new AcpError("the helper gave no session id", -32603);
       this.sessionId = created.sessionId;
@@ -114,11 +115,16 @@ export class Session {
 
   /** Sends the helper new input; settles when its reply ended. */
   prompt(text, write, signal, sync) {
+    const prompt = typeof text === "string" ? [{ type: "text", text }] : text;
+    if (prompt.some((block) => block.type === "image") && !this.supportsImages) {
+      write({ error: "The helper does not support image prompts. Update Kiro CLI or use a model with image support." });
+      return this.drop("image prompts unsupported");
+    }
     const replied = this.#attach(write, signal, sync);
     this.collecting = true;
     const stuck = setTimeout(() => void this.drop("the turn took too long"), TURN_MS);
     this.conn
-      .request("session/prompt", { sessionId: this.sessionId, prompt: [{ type: "text", text }] })
+      .request("session/prompt", { sessionId: this.sessionId, prompt })
       .then((result) => {
         const reason = String(result.stopReason ?? "end_turn");
         if (reason !== "end_turn") return this.drop(reason === "cancelled" ? "cancelled" : `the helper stopped (${reason})`);

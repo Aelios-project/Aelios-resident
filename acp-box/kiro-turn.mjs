@@ -9,7 +9,7 @@
 //                    { "error": "…" }                      instead of done when the turn failed
 // The API key is not in the turn: the box adds its own (engines.mjs).
 //
-// messages is the conversation as [{ who: "User" | "You", text, mark }], mark a hash of the conversation up to that
+// messages is the conversation as [{ who: "User" | "You", text, mark, images? }], mark a hash of the conversation up to that
 // message. With a conversation id, the box keeps one live helper session for it while it runs and sends only what is
 // new (session.mjs, prompt.mjs); without one, the turn is on its own. Nothing is written down: the cloud keeps the
 // conversation, and a session that is gone is seeded again from it. tools are the resident's (Messages API

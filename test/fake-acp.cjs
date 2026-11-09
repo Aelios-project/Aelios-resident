@@ -21,11 +21,12 @@ async function callTool(name, args) {
 
 async function handle(message) {
   const { id, method, params } = message;
-  if (method === "initialize") return send({ id, result: { protocolVersion: 1, agentCapabilities: { loadSession: true } } });
+  if (method === "initialize") return send({ id, result: { protocolVersion: 1, agentCapabilities: { loadSession: true, promptCapabilities: { image: !agent.prompt.includes("NO_IMAGES") } } } });
   if (method === "session/new") return send({ id, result: { sessionId: `s${(sessions += 1)}` } });
   if (method !== "session/prompt") return id === undefined ? undefined : send({ id, error: { code: -32601, message: "no" } });
   const text = params.prompt.map((block) => block.text).join("");
-  log({ prompt: { sessionId: params.sessionId, text } });
+  const images = params.prompt.filter((block) => block.type === "image");
+  log({ prompt: { sessionId: params.sessionId, text, ...(images.length ? { images, blocks: params.prompt } : {}) } });
   if (text.includes("fail please")) {
     process.stderr.write(`401 unauthorized for ${process.env.KIRO_API_KEY}\n`);
     process.exit(1);
