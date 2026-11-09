@@ -214,7 +214,7 @@ import { findTools, type FindHost } from "./find-tools";
 import { RoleStore, unknownRole, withRole, type Role } from "./task-roles";
 import { MadeFiles, fileTools, type FileHost, type MadeFile } from "./made-files";
 import { PERSONA_MAX_CHARS, personaTools } from "./persona-edit";
-import { USAGE_KEEP_DAYS, UsageStore, entryOf, usageLabel, usageSpans, type StepLike, type UsageLabel, type UsageRow, type UsageTotals } from "./usage";
+import { USAGE_KEEP_DAYS, UsageStore, creditsEntry, entryOf, usageLabel, usageSpans, type StepLike, type UsageLabel, type UsageRow, type UsageTotals } from "./usage";
 import { learnFromSearch, searched, type Searched } from "./web/learn";
 import { validateUrlWithDns } from "./web/validate-url";
 import {
@@ -800,8 +800,9 @@ export class Resident extends Think<Env> {
       // The box keeps one live Kiro session for the resident's own conversation, none for work outside it.
       ...(auxiliary ? {} : { conversation: this.residentId }),
       send: (body) => boxTurn(this.env, this.residentId, "kiro", body),
-      // Kiro reports credits, not tokens: the running total is kept.
+      // Kiro reports credits, not tokens: the running total is kept, and the turn gets a row in the usage timeline.
       credits: (credits) => {
+        this.recordCredits(credits, id);
         this.ctx.waitUntil(
           this.ctx.storage
             .get<{ total: number }>("kiro_credits")
@@ -2818,6 +2819,17 @@ export class Resident extends Think<Env> {
       if (entry) this.usageStore().add(entry);
     } catch (error) {
       console.error("usage: call not recorded", { error: String(error) });
+    }
+  }
+
+  /** A row in the usage timeline for a Kiro call: its credits, labeled as the token rows of the same turn are. */
+  private recordCredits(credits: number, model: string): void {
+    try {
+      const requestId = this.activeTurn?.requestId;
+      const entry = creditsEntry(credits, model, (requestId && this.#usageLabels.get(requestId)) || { kind: "chat", via: "" }, Date.now());
+      if (entry) this.usageStore().add(entry);
+    } catch (error) {
+      console.error("usage: credits not recorded", { error: String(error) });
     }
   }
 

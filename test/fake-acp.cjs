@@ -34,6 +34,10 @@ async function handle(message) {
     chunk(params.sessionId, "On it. ");
     const result = await callTool("start_thread", { job: "notes" });
     chunk(params.sessionId, `Tool said: ${result.result.content[0].text}`);
+  } else if (text.includes("think please")) {
+    send({ method: "session/update", params: { sessionId: params.sessionId, update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "Hmm. " } } } });
+    send({ method: "session/update", params: { sessionId: params.sessionId, update: { sessionUpdate: "plan", entries: [] } } });
+    chunk(params.sessionId, "Done.");
   } else {
     chunk(params.sessionId, "Hello ");
     chunk(params.sessionId, "there");

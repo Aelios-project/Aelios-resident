@@ -78,6 +78,8 @@ export type UsageEntry = UsageLabel & {
   output: number;
   reasoning: number;
   tools: string[];
+  /** What a provider that reports credits instead of tokens (Kiro) charged for the call. Rows from tokens leave it out. */
+  credits?: number;
 };
 
 const count = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0);
@@ -115,6 +117,12 @@ export function entryOf(step: StepLike, label: UsageLabel, at: number, ttl: "5m"
   };
 }
 
+/** The row for a call to a provider that reports credits and no tokens (Kiro); null for no credits. */
+export function creditsEntry(credits: number, model: string, label: UsageLabel, at: number): UsageEntry | null {
+  if (!(credits > 0)) return null;
+  return { ...label, at, model: model.slice(0, 200), step: 0, input: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 0, reasoning: 0, tools: [], credits };
+}
+
 /** One row as the page shows it, with what it cost at list price (null when the model has no price). */
 export type UsageRow = UsageEntry & { id: number; cost: number | null };
 
@@ -126,6 +134,7 @@ export type UsageTotals = {
   cacheWrite: number;
   output: number;
   reasoning: number;
+  credits: number;
   cost: number;
   unpriced: number;
 };
@@ -144,6 +153,7 @@ type Row = {
   output: number;
   reasoning: number;
   tools: string;
+  credits: number;
 };
 
 type Sum = {
@@ -156,6 +166,7 @@ type Sum = {
   cache_write_1h: number;
   output: number;
   reasoning: number;
+  credits: number;
 };
 
 function rowOf(row: Row): UsageRow {
@@ -171,7 +182,8 @@ function rowOf(row: Row): UsageRow {
     cacheWrite1h: row.cache_write_1h,
     output: row.output,
     reasoning: row.reasoning,
-    tools: row.tools ? row.tools.split(",") : []
+    tools: row.tools ? row.tools.split(",") : [],
+    credits: row.credits
   };
   return { id: row.id, ...entry, cost: costOf(entry.model, entry) };
 }
@@ -185,13 +197,14 @@ export class UsageStore {
       cache_write INTEGER NOT NULL, cache_write_1h INTEGER NOT NULL, output INTEGER NOT NULL, reasoning INTEGER NOT NULL,
       tools TEXT NOT NULL)`;
     sql`CREATE INDEX IF NOT EXISTS res_usage_at ON res_usage (at)`;
+    if (!sql<{ n: number }>`SELECT COUNT(*) AS n FROM pragma_table_info('res_usage') WHERE name = 'credits'`[0].n) sql`ALTER TABLE res_usage ADD COLUMN credits REAL NOT NULL DEFAULT 0`;
   }
 
   add(entry: UsageEntry): void {
     const e = entry;
-    this.sql`INSERT INTO res_usage (at, model, kind, via, step, input, cache_read, cache_write, cache_write_1h, output, reasoning, tools)
+    this.sql`INSERT INTO res_usage (at, model, kind, via, step, input, cache_read, cache_write, cache_write_1h, output, reasoning, tools, credits)
       VALUES (${e.at}, ${e.model}, ${e.kind}, ${e.via}, ${e.step}, ${e.input}, ${e.cacheRead}, ${e.cacheWrite}, ${e.cacheWrite1h},
-      ${e.output}, ${e.reasoning}, ${e.tools.join(",")})`;
+      ${e.output}, ${e.reasoning}, ${e.tools.join(",")}, ${e.credits ?? 0})`;
     if (e.at - this.#prunedAt >= PRUNE_EVERY_MS) {
       this.#prunedAt = e.at;
       this.sql`DELETE FROM res_usage WHERE at < ${e.at - USAGE_KEEP_DAYS * DAY_MS}`;
@@ -202,9 +215,9 @@ export class UsageStore {
   totals(since: number): UsageTotals {
     const sums = this.sql<Sum>`SELECT model, (input + cache_read + cache_write > ${LONG_PROMPT}) AS is_long, COUNT(*) AS calls,
       SUM(input) AS input, SUM(cache_read) AS cache_read, SUM(cache_write) AS cache_write, SUM(cache_write_1h) AS cache_write_1h,
-      SUM(output) AS output, SUM(reasoning) AS reasoning
+      SUM(output) AS output, SUM(reasoning) AS reasoning, SUM(credits) AS credits
       FROM res_usage WHERE at >= ${since} GROUP BY model, is_long`;
-    const totals: UsageTotals = { calls: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0, cost: 0, unpriced: 0 };
+    const totals: UsageTotals = { calls: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0, credits: 0, cost: 0, unpriced: 0 };
     for (const sum of sums) {
       totals.calls += sum.calls;
       totals.input += sum.input;
@@ -212,6 +225,7 @@ export class UsageStore {
       totals.cacheWrite += sum.cache_write;
       totals.output += sum.output;
       totals.reasoning += sum.reasoning;
+      totals.credits += sum.credits;
       const price = priceFor(sum.model, sum.is_long ? LONG_PROMPT + 1 : 0);
       if (!price) {
         totals.unpriced += sum.calls;

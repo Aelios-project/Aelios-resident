@@ -52,7 +52,8 @@ export function kiroError(message: string): string {
 function replyEvents(model: string) {
   let opened = false;
   let index = -1;
-  let text = false;
+  // The kind of block that is open: Kiro's thoughts become a thinking block, as on the Claude box.
+  let block: "text" | "thinking" | null = null;
   let calls = 0;
   const out: StreamEvent[] = [];
   const open = () => {
@@ -60,30 +61,39 @@ function replyEvents(model: string) {
     opened = true;
     out.push({ type: "message_start", message: { id: `kiro_${crypto.randomUUID()}`, type: "message", role: "assistant", model, content: [], usage: { input_tokens: 0, output_tokens: 0 } } });
   };
-  const closeText = () => {
-    if (text) out.push({ type: "content_block_stop", index });
-    text = false;
+  const closeBlock = () => {
+    if (block) out.push({ type: "content_block_stop", index });
+    block = null;
+  };
+  const piece = (kind: "text" | "thinking", delta: StreamEvent) => {
+    open();
+    if (block !== kind) {
+      closeBlock();
+      out.push({ type: "content_block_start", index: (index += 1), content_block: kind === "text" ? { type: "text", text: "" } : { type: "thinking", thinking: "" } });
+      block = kind;
+    }
+    out.push({ ...delta, index });
   };
   return {
     get opened() {
       return opened;
     },
-    text(piece: string) {
-      open();
-      if (!text) out.push({ type: "content_block_start", index: (index += 1), content_block: { type: "text", text: "" } });
-      text = true;
-      out.push({ type: "content_block_delta", index, delta: { type: "text_delta", text: piece } });
+    text(chunk: string) {
+      piece("text", { type: "content_block_delta", delta: { type: "text_delta", text: chunk } });
+    },
+    thought(chunk: string) {
+      piece("thinking", { type: "content_block_delta", delta: { type: "thinking_delta", thinking: chunk } });
     },
     tool(use: { id?: unknown; name?: unknown; input?: unknown }) {
       open();
-      closeText();
+      closeBlock();
       calls += 1;
       out.push({ type: "content_block_start", index: (index += 1), content_block: { type: "tool_use", id: String(use.id), name: String(use.name), input: {} } });
       out.push({ type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: JSON.stringify(use.input ?? {}) } });
       out.push({ type: "content_block_stop", index });
     },
     end() {
-      closeText();
+      closeBlock();
       out.push({ type: "message_delta", delta: { stop_reason: calls ? "tool_use" : "end_turn" }, usage: { output_tokens: 0 } });
       out.push({ type: "message_stop" });
     },
@@ -142,6 +152,7 @@ export function kiroFetch(turn: KiroTurn): typeof fetch {
     let called = false;
     /** The stream events one box line makes. */
     const take = (line: Record<string, unknown>): { events: StreamEvent[]; error?: string } => {
+      if (typeof line.thought === "string" && line.thought) reply.thought(line.thought);
       if (typeof line.text === "string" && line.text) reply.text(line.text);
       if (line.tool && typeof line.tool === "object") {
         called = true;
