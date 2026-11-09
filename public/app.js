@@ -2033,15 +2033,8 @@ function resident() {
     },
     totalCost(t) {
       if (!t) return '…';
-      if (!t.cost && t.credits) return this.creditsText(t.credits);
       if (t.calls && t.unpriced === t.calls) return '没有价格';
       return this.money(t.cost);
-    },
-    creditsText(n) {
-      return n.toFixed(n >= 10 ? 1 : n >= 1 ? 2 : 3) + ' credits';
-    },
-    rowCost(row) {
-      return row.credits ? this.creditsText(row.credits) : row.cost === null ? '没有价格' : '约 ' + this.money(row.cost);
     },
     totalCalls(t) {
       return t ? t.calls + ' 次' : '';
@@ -2052,16 +2045,12 @@ function resident() {
     },
     totalTokens(t) {
       if (!t) return '';
-      var all = t.input + t.cacheRead + t.cacheWrite;
-      var parts = all + t.output || !t.credits ? ['in ' + this.compact(all) + ' · out ' + this.compact(t.output)] : [];
-      if (t.cost && t.credits) parts.push(this.creditsText(t.credits));
-      return parts.join(' · ');
+      return 'in ' + this.compact(t.input + t.cacheRead + t.cacheWrite) + ' · out ' + this.compact(t.output);
     },
     usageToday() {
       var t = this.usage.totals && this.usage.totals.today;
       if (!t) return '';
-      var credits = t.cost && t.credits ? ' + ' + this.creditsText(t.credits) : '';
-      return '今天约 ' + this.totalCost(t) + credits + ' · cache hit ' + this.hitText(t);
+      return '今天约 ' + this.totalCost(t) + ' · cache hit ' + this.hitText(t);
     },
     kindText(row) {
       var kind = { chat: '聊天', letter: '写交接信', checkin: '定时找你', heartbeat: '心跳', alarm: '闹钟', task: '线程交回', worker: '线程干活',
@@ -2075,7 +2064,7 @@ function resident() {
       return 'new ' + n(row.input) + ' · read ' + n(row.cacheRead) + ' · ' + write + ' · out ' + n(row.output) + (row.reasoning ? ' (think ' + n(row.reasoning) + ')' : '');
     },
     usageNote() {
-      return '钱按 Anthropic 官方价估，订阅额度、中转和别家的实际花费会不一样；表里没有的模型只记 token。new 是没走缓存的输入，read、write 是从缓存读、往缓存写（1h、5m 是写进 1 小时还是 5 分钟的缓存），out 是输出（think 是其中想的部分），in 是 new、read、write 加起来，hit 是 read 占 in 的比例。只留最近 ' + this.usage.keepDays + ' 天。';
+      return '钱按 Anthropic、OpenAI 官方价估，Kiro 按 1000 credits = $20 算，订阅额度、中转和别家的实际花费会不一样；表里没有的模型只记 token。new 是没走缓存的输入，read、write 是从缓存读、往缓存写（1h、5m 是写进 1 小时还是 5 分钟的缓存），out 是输出（think 是其中想的部分），in 是 new、read、write 加起来，hit 是 read 占 in 的比例。只留最近 ' + this.usage.keepDays + ' 天。';
     },
 
     // ---- persona ----
