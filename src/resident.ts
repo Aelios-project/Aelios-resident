@@ -146,7 +146,7 @@ import {
   type ThreadCard
 } from "./cloud-tasks";
 import { WaitingStore } from "./waiting-store";
-import { carryOver, markTakenOver, unfinishedWithTitle } from "./takeover";
+import { carryOver, markTakenOver, stillTakeable, unfinishedWithTitle } from "./takeover";
 import { MachineError, MachineStore, machineRecord, machineReply, type Ask, type Finished, type WorkKind } from "./machine";
 import { wakesResident } from "./machine-wake";
 import { ATTACH_MARK, ATTACH_MAX_FILES, keep, loadAll, loadFile, markedFile, type Attachment } from "./attachments";
@@ -1649,7 +1649,7 @@ export class Resident extends Think<Env> {
     const id = this.activeTurn!.requestId;
     this.#turnTasks.set(id, (this.#turnTasks.get(id) ?? 0) + 1);
     // A new thread on the machine whose title is an unfinished thread's takes that work over (takeover.ts).
-    const taken = !follows && execution === "machine" ? unfinishedWithTitle(this.cloudTasks(), input.title) : null;
+    const taken = !follows && execution === "machine" ? unfinishedWithTitle(this.cloudTasks(), input.title, (root) => this.machines().unsettled(root)) : null;
     const sentJob = role ? withRole(role, input.job) : input.job;
     const job = taken ? carryOver(sentJob, taken, this.cloudTasks()) : sentJob;
     const unasked = this.#theirTurns.has(id) ? 0 : follows!.unasked + 1;
@@ -1667,7 +1667,8 @@ export class Resident extends Think<Env> {
       files
     );
     if ("error" in task) return { error: task.error };
-    if (taken) {
+    // startTask awaits scheduling: the old thread may have changed while the new work was being sent.
+    if (taken && stillTakeable(this.cloudTasks(), taken, (root) => this.machines().unsettled(root))) {
       markTakenOver(this.cloudTasks(), taken, task.root);
       this.machines().answered(taken.root);
     }

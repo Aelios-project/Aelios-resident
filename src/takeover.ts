@@ -9,13 +9,19 @@ const WORDS_KEPT = 800;
 const norm = (title: string) => title.trim().toLowerCase();
 
 /** The newest unfinished machine thread with this title that nobody took over yet; null when there is none. Shortcut: exact title only, a renamed thread is not found. */
-export function unfinishedWithTitle(store: TaskStore, title: string): Task | null {
+export function unfinishedWithTitle(store: TaskStore, title: string, unsettled: (root: string) => boolean): Task | null {
   for (const card of store.threads(30)) {
     if (norm(card.title) !== norm(title) || card.runs !== "machine" || !UNFINISHED.has(card.status)) continue;
     const latest = store.latest(card.id);
-    if (latest && !latest.test && !latest.summary.startsWith(TAKEN)) return latest;
+    if (latest && !latest.test && !latest.summary.startsWith(TAKEN) && !unsettled(card.id)) return latest;
   }
   return null;
+}
+
+/** Recheck after an await: do not overwrite a newer task, result, or newly queued work. */
+export function stillTakeable(store: TaskStore, old: Task, unsettled: (root: string) => boolean): boolean {
+  const current = store.latest(old.root);
+  return Boolean(current && current.id === old.id && current.status === old.status && current.summary === old.summary && !unsettled(old.root));
 }
 
 /** The new job with the old thread's task and last words after it, marked as what they are: information, not instructions. */

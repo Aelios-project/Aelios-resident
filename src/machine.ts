@@ -230,7 +230,9 @@ export class MachineStore {
       }
       const [{ n }] = this.sql<{ n: number }>`SELECT COUNT(*) AS n FROM res_machine_work WHERE state IN ('queued', 'claimed')`;
       if (n >= MAX_PENDING) fail(429, "QUEUE_FULL", "机器上排着的已经满了，等前面的做完再派");
-      this.sql`DELETE FROM res_machine_work WHERE state = 'done' AND created_at < ${Date.now() - KEPT_MS}`;
+      // Keep work without a final receipt: a lapsed lease may still be running and must block takeover.
+      this.sql`DELETE FROM res_machine_work WHERE state = 'done' AND created_at < ${Date.now() - KEPT_MS}
+        AND EXISTS (SELECT 1 FROM res_machine_receipts r WHERE r.receipt_id = res_machine_work.work_id || ':final')`;
       this.sql`DELETE FROM res_machine_receipts WHERE work_id NOT IN (SELECT work_id FROM res_machine_work)`;
       this.sql`DELETE FROM res_machine_notes WHERE work_id NOT IN (SELECT work_id FROM res_machine_work)`;
       this.sql`INSERT INTO res_machine_work VALUES (${`w_${hex(8)}`}, ${machine!.id}, ${`wt_${hex(16)}`}, ${task.id}, ${task.root}, ${kind}, ${body},
@@ -432,6 +434,14 @@ export class MachineStore {
   /** The owner answered or dismissed what a thread asked: its open asks (of one task, or all) leave the waiting list. True when one was open. */
   answered(thread: string, task = ""): boolean {
     return clearAsks(this.sql, thread, task) > 0;
+  }
+
+  /** A thread is safe to take over only after every retained work has a final receipt. A closed lease may still report late. */
+  unsettled(thread: string): boolean {
+    return this.sql`SELECT 1 FROM res_machine_work w WHERE w.thread = ${thread} AND NOT EXISTS
+      (SELECT 1 FROM res_machine_receipts r WHERE r.receipt_id = w.work_id || ':final') LIMIT 1`.length > 0 ||
+      this.sql`SELECT 1 FROM res_tasks t WHERE t.root = ${thread} AND t.runs = 'machine' AND NOT EXISTS
+        (SELECT 1 FROM res_machine_work w WHERE w.task_id = t.id) LIMIT 1`.length > 0;
   }
 
   /** Whether `task` of `thread` has an open ask. */
