@@ -40,7 +40,13 @@ for (const [name, key] of [
   ["Claude-Haiku-5.5", "haiku-5-5"],
   ["claude-3-5-haiku-20241022", "haiku-3-5"],
   ["@cf/zai-org/glm-4.7-flash", null],
-  ["openai/gpt-5.6-sol", null],
+  ["openai/gpt-5.6-sol", "gpt-5.6-sol"],
+  ["custom-x/openai/GPT-6.1-Sol", "gpt-6.1-sol"],
+  ["gpt-4.1-2025-04-14", "gpt-4.1"],
+  ["gpt-5.5-pro", "gpt-5.5-pro"],
+  ["gpt-5-chat-latest", null],
+  ["gpt-5.3-codex", null],
+  ["kiro/auto", null],
   ["", null]
 ]) {
   assert.equal(u.priceKey(name), key, name);
@@ -71,6 +77,15 @@ near(u.costOf("anthropic/claude-opus-5-5", { input: 12, cacheRead: 30_000, cache
 near(u.costOf("claude-haiku-5-5", { input: 1_000, cacheRead: 150_000, cacheWrite: 0, cacheWrite1h: 0, output: 1_000 }), (1_000 * 0.5 + 150_000 * 0.05 + 1_000 * 2.5) / 1e6);
 assert.equal(u.costOf("@cf/zai-org/glm-4.7-flash", { input: 1, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 1 }), null);
 console.log("PASS each call is priced at Anthropic's list price, with each model's own cache-read rate, 5-minute and 1-hour writes, and Haiku 5.5's long-prompt rate");
+// GPT: OpenAI's list price, one 30-minute write rate, and a dearer rate in full past 272,000 prompt tokens.
+assert.deepEqual(u.priceFor("openai/gpt-6.1-sol"), { input: 2, write5m: 2.5, write1h: 2.5, read: 0.1, output: 10 });
+assert.equal(u.priceFor("gpt-6.1-sol", 272_000).input, 2);
+assert.equal(u.priceFor("gpt-6.1-sol", 272_001).input, 4);
+assert.equal(u.priceFor("gpt-5.6-sol", 150_000).input, 4);
+assert.equal(u.priceFor("gpt-5-mini", 900_000).input, 0.25);
+near(u.costOf("openai/gpt-6.1-sol", { input: 400, cacheRead: 600, cacheWrite: 0, cacheWrite1h: 0, output: 20 }), (400 * 2 + 600 * 0.1 + 20 * 10) / 1e6);
+assert.equal(u.KIRO_USD_PER_CREDIT, 0.02);
+console.log("PASS GPT is priced at OpenAI's list price, long prompts past 272,000 tokens at the long rate, and Kiro at $20 for 1,000 credits");
 
 // ---- turn labels ----
 const now = "2026-10-27 12:00";
@@ -181,7 +196,8 @@ assert.equal(next.rows.length, 2);
 assert.equal(next.more, false);
 assert.equal(next.rows[0].cost, null);
 assert.deepEqual(next.rows[0].tools, []);
-// Kiro reports credits, not tokens: a row of credits sums into the totals, and a table made before the column existed gains it.
+// Kiro reports credits, not tokens: a row of credits is priced at $20 for 1,000, and a table made before the column existed gains it.
+const before = store.totals(spans.today).cost;
 store.add(u.creditsEntry(0.25, "kiro/auto", label, t0 - 1000));
 store.add(u.creditsEntry(0.5, "kiro/auto", label, t0 - 500));
 assert.equal(u.creditsEntry(0, "kiro/auto", label, t0), null);
@@ -189,6 +205,21 @@ assert.equal(store.totals(spans.today).credits, 0.75);
 assert.equal(store.totals(spans.today).unpriced, 0, "calls with credits are not counted as unpriced");
 assert.equal(store.totals(spans.week).unpriced, 1, "the model without a price is still counted");
 assert.equal(store.rows(null, 1).rows[0].credits, 0.5);
+near(store.rows(null, 1).rows[0].cost, 0.01);
+near(store.totals(spans.today).cost - before, 0.015);
+// Each model gets the long rate past its own line: Haiku 5.5 past 100,000, GPT past 272,000.
+const banded = new DatabaseSync(":memory:");
+const bandedStore = new u.UsageStore((strings, ...values) => {
+  const statement = banded.prepare(strings.join("?"));
+  if (statement.columns().length) return statement.all(...values);
+  statement.run(...values);
+  return [];
+});
+const prompt = (model, input) => ({ ...entry, model, at: t0, input, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 0 });
+bandedStore.add(prompt("gpt-6.1-sol", 150_000));
+bandedStore.add(prompt("gpt-6.1-sol", 300_000));
+bandedStore.add(prompt("claude-haiku-5-5", 150_000));
+near(bandedStore.totals(0).cost, (150_000 * 2 + 300_000 * 4 + 150_000 * 0.5) / 1e6);
 const old = new DatabaseSync(":memory:");
 const oldSql = (strings, ...values) => {
   const statement = old.prepare(strings.join("?"));
@@ -200,5 +231,5 @@ old.exec("CREATE TABLE res_usage (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEG
 old.exec("INSERT INTO res_usage VALUES (1, 5, 'm', 'chat', 'web', 0, 1, 0, 0, 0, 1, 0, '')");
 const migrated = new u.UsageStore(oldSql);
 assert.equal(migrated.rows(null).rows[0].credits, 0);
-console.log("PASS credits rows sum into the totals and an older table gets the column");
+console.log("PASS credits rows are priced into the totals, each model takes its own long-prompt rate, and an older table gets the column");
 console.log("PASS the store sums today, 7 and 30 days from her midnight, pages back by row, prices on reading, and drops rows older than 90 days");

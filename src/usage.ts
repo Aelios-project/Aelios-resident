@@ -7,7 +7,7 @@
 // list prices (prices.ts) when it is read, so a price added later also prices older rows.
 
 import type { LanguageModelUsage } from "ai";
-import { LONG_PROMPT, costAt, costOf, priceFor } from "./prices";
+import { KIRO_USD_PER_CREDIT, LONG_PROMPTS, costAt, costOf, priceFor } from "./prices";
 import { noteKind } from "./prompts";
 import type { Sql } from "./sticker-store";
 
@@ -126,7 +126,7 @@ export function creditsEntry(credits: number, model: string, label: UsageLabel, 
 /** One row as the page shows it, with what it cost at list price (null when the model has no price). */
 export type UsageRow = UsageEntry & { id: number; cost: number | null };
 
-/** A span's sums. cost leaves out the calls to models without a price; unpriced counts those calls, except the ones with credits. */
+/** A span's sums. cost leaves out the calls to models without a price; unpriced counts those calls. Kiro's credits are priced at its rate. */
 export type UsageTotals = {
   calls: number;
   input: number;
@@ -158,7 +158,8 @@ type Row = {
 
 type Sum = {
   model: string;
-  is_long: number;
+  /** How many of the long-prompt lines (LONG_PROMPTS) the prompt is past. */
+  band: number;
   calls: number;
   input: number;
   cache_read: number;
@@ -186,7 +187,7 @@ function rowOf(row: Row): UsageRow {
     tools: row.tools ? row.tools.split(",") : [],
     credits: row.credits
   };
-  return { id: row.id, ...entry, cost: costOf(entry.model, entry) };
+  return { id: row.id, ...entry, cost: entry.credits ? entry.credits * KIRO_USD_PER_CREDIT : costOf(entry.model, entry) };
 }
 
 export class UsageStore {
@@ -214,10 +215,11 @@ export class UsageStore {
 
   /** Sums since a time. Priced per model, and for Haiku 5.5 per prompt length, as each call was billed. */
   totals(since: number): UsageTotals {
-    const sums = this.sql<Sum>`SELECT model, (input + cache_read + cache_write > ${LONG_PROMPT}) AS is_long, COUNT(*) AS calls,
+    const [short, long] = LONG_PROMPTS;
+    const sums = this.sql<Sum>`SELECT model, (input + cache_read + cache_write > ${short}) + (input + cache_read + cache_write > ${long}) AS band, COUNT(*) AS calls,
       SUM(input) AS input, SUM(cache_read) AS cache_read, SUM(cache_write) AS cache_write, SUM(cache_write_1h) AS cache_write_1h,
       SUM(output) AS output, SUM(reasoning) AS reasoning, SUM(credits) AS credits, SUM(credits > 0) AS credited
-      FROM res_usage WHERE at >= ${since} GROUP BY model, is_long`;
+      FROM res_usage WHERE at >= ${since} GROUP BY model, band`;
     const totals: UsageTotals = { calls: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0, reasoning: 0, credits: 0, cost: 0, unpriced: 0 };
     for (const sum of sums) {
       totals.calls += sum.calls;
@@ -227,7 +229,8 @@ export class UsageStore {
       totals.output += sum.output;
       totals.reasoning += sum.reasoning;
       totals.credits += sum.credits;
-      const price = priceFor(sum.model, sum.is_long ? LONG_PROMPT + 1 : 0);
+      totals.cost += sum.credits * KIRO_USD_PER_CREDIT;
+      const price = priceFor(sum.model, sum.band ? LONG_PROMPTS[sum.band - 1] + 1 : 0);
       if (!price) {
         totals.unpriced += sum.calls - sum.credited;
         continue;
