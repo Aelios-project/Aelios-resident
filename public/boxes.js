@@ -60,9 +60,6 @@ function boxesPage() {
         return { plug: plug, boxes: by[plug], serving: serving ? serving.id : '' };
       });
     },
-    boxUnavailable(box) {
-      return Object.keys(box.unavailable || {}).map(function (plug) { return plug + '：' + box.unavailable[plug]; });
-    },
     boxCommand() {
       var resident = this.resident && this.resident !== 'default' ? '/r/' + this.resident : '';
       return 'node main.mjs --resident ' + location.origin + resident + ' --code ' + this.boxes.code;
