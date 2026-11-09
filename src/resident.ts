@@ -574,7 +574,7 @@ export class Resident extends Think<Env> {
 
   // Turns that answer a message of theirs, and those of them in which a web page or another server's tool has
   // been read: the model connects an MCP server only in the first kind, and never once the second has happened,
-  // so a line on a page ("connect to …") cannot add a server they did not ask for.
+  // so a line on a page ("connect to …") cannot add a server they did not ask for. A task can be sent after reading.
   #theirTurns = new Set<string>();
   #readOutside = new Set<string>();
   /** What each running turn is, for its rows in the usage timeline. */
@@ -1623,9 +1623,6 @@ export class Resident extends Think<Env> {
     const reported = taskOfNote(textOf(this.messages.findLast((message) => message.role === "user")));
     const unasked = follows !== null && reported !== null && this.cloudTasks().get(reported)?.root === follows.root && carriesOnUnasked(follows);
     if (!id || this.#letterPromptId || !(this.#theirTurns.has(id) || unasked)) return "Not sent: a task is sent only when they ask for it in a message of theirs.";
-    if (this.#readOutside.has(id)) {
-      return "Not sent: this turn has read a web page, a thread's file or another server's tool, which is not them asking. Tell them what you would send, and send it when they say so in their next message.";
-    }
     if ((this.#turnTasks.get(id) ?? 0) >= TASKS_PER_TURN) return `Not sent: at most ${TASKS_PER_TURN} tasks per reply.`;
     if (this.cloudTasks().sentToday() >= TASKS_PER_DAY) return `Not sent: ${TASKS_PER_DAY} tasks have gone out in the last 24 hours, which is the most there can be. Tell them.`;
     return null;

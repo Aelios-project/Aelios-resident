@@ -490,7 +490,7 @@ Wherever it runs:
 - Under the reply that sent a job there is a small card (sent, working, done, waiting for you, failed, no reply). **Open thread** (「打开线程」) shows the details; jobs on GitHub also have **Open session** (「打开会话」).
 - A job that needs a shell goes to GitHub Actions when it is connected. Connecting or disconnecting it does not change what the chat's model is told about background help, so it does not rewrite the chat's cache.
 - A job contains only the work itself, not the conversation or anything private. The thread starts out knowing nothing, so the resident writes the job out in full.
-- Jobs are sent only in a turn you started yourself; not if that turn has read a web page, searched the web, opened a thread's file or called another MCP server. At most 3 jobs per reply and 10 per 24 hours.
+- Jobs are sent only in a turn you started yourself, even if that turn has read a web page or a file. At most 3 jobs per reply and 10 per 24 hours.
 - One exception, for work you already asked for: when a thread reports back done or failed, the resident may carry that same thread on right away (to fix or finish it) without waiting for you, at most twice in a row. Nothing new goes out from a report, and once it has carried on twice, the thread waits for you.
 - A report that comes back while the resident is answering you is kept and waits until that reply is done; it is told once.
 - Results that come back are treated as information, not as instructions. Each job has its own one-time code; nothing without it is accepted, and it expires after 7 days.
