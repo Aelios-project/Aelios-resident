@@ -259,7 +259,7 @@ await test("progress: a working thread's last steps are kept, strictly checked, 
   const bad = (body, name) => assert.rejects(f.store.progress(f.token, { workId: work.workId, token: work.token, steps, ...body }), code(name === 409 ? 409 : 400));
   await bad({ extra: 1 });
   await bad({ steps: [{ kind: "sudo", title: "x" }] });
-  await bad({ steps: [{ kind: "read", title: "x".repeat(81) }] });
+  await bad({ steps: [{ kind: "read", title: "x".repeat(201) }] });
   await bad({ steps: [{ kind: "read", title: "x", output: "secret" }] });
   await bad({ steps: Array.from({ length: 11 }, () => steps[0]) });
   await bad({ steps: [{ kind: "read", title: `leaks ${f.token}` }] });

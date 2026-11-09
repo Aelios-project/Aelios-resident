@@ -185,6 +185,8 @@ function decide(options: LanguageModelV4CallOptions): { text: string; delayMs?: 
     const reported = said.match(/your cloud task (t_[0-9a-f]{10})/)?.[1];
     return { tool: "cloud_task", input: said.includes("另开一单") ? cloudJob("另一件事") : { ...cloudJob("补上标题"), follow_up_of: reported } };
   }
+  // What a thread answered them directly passes, unless it asks to be told.
+  if (said.startsWith("(Not from them: your cloud task") && said.includes("They wrote to that thread themselves") && !said.includes("告诉住户")) return { text: "SKIP" };
   if (said.startsWith("(Not from them: your cloud task")) return { text: `云端回来了：${said}` };
   if (said.includes("读网页怎么说")) {
     const fetch = (options.tools ?? []).find((t) => t.type === "function" && t.name === "web_fetch") as { description?: string } | undefined;
