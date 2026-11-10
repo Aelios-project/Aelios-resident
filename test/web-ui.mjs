@@ -12,6 +12,7 @@ for (const file of Object.values(mixins)) assert.ok(html.includes(`<script src="
 const resized = [];
 const context = vm.createContext({ document: { documentElement: { dataset: { theme: 'dark' } } }, localStorage: { getItem() { return ''; }, setItem() {}, removeItem() {} }, setTimeout, clearTimeout, console, Date, URL, Blob, TextDecoder, TextEncoder, atob, btoa, confirm: () => true, window: {}, ResizeObserver: class { constructor(fn) { resized.push(fn); } observe() {} } });
 vm.runInContext(markdown, context);
+vm.runInContext(readFileSync('public/machine-ask-kind.js', 'utf8'), context);
 vm.runInContext(code, context);
 // A mixed-in part must not reuse a name the page already has: Object.assign would replace it (waiting.js once
 // replaced app.js's waiting(), and the chat stopped drawing).
@@ -29,6 +30,14 @@ for (const [factory, file] of Object.entries(mixins)) {
 vm.runInContext('function testPage() { var p = resident(); p.$nextTick = function (fn) { fn(); }; p.$refs = {}; return p; }', context);
 const page = vm.runInContext('testPage()', context);
 const copy = (value) => JSON.parse(JSON.stringify(value));
+assert.ok(html.includes('<script src="/machine-ask-kind.js"></script>'), 'typed ask labels load on the page');
+const typedAskPage = vm.runInContext('testPage()', context);
+typedAskPage.thread = { loaded: true, runs: 'machine', helper: 'dsh', status: 'needs_you', tasks: [], asks: [{ kind: 'permission' }] };
+assert.match(typedAskPage.threadSub(), /Waiting for approval/);
+typedAskPage.thread.asks = [{ kind: 'question' }];
+assert.match(typedAskPage.threadSub(), /Waiting for an answer/);
+typedAskPage.thread.asks = [{}];
+assert.ok(!typedAskPage.threadSub().includes('Waiting for'), 'missing kind retains the existing thread status');
 // Nothing the model or anyone else wrote is put into the page as HTML: every message, card and tool call is bound with x-text.
 assert.ok(!html.includes('x-html'), 'the page never binds HTML');
 // Buttons that do something show a small icon, not a word: each says what it does in title and aria-label.
