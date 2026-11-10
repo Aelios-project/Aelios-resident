@@ -1,5 +1,5 @@
 // List prices in US dollars per million tokens: Claude as published on
-// https://platform.claude.com/docs/en/about-claude/pricing (copied 2026-10-27), GPT as published on
+// https://platform.claude.com/docs/en/about-claude/pricing (copied 2026-11-10), GPT as published on
 // https://developers.openai.com/api/docs/pricing (standard tier, copied 2026-11-09; GPT-5.6 Sol's price there is a
 // promotion until 2026-11-30). The usage timeline (usage.ts) prices each call with them, matched on the model's name, so
 // it is what the call would cost on the maker's own API: a plan's included credit, a relay with its own rates, a cloud
@@ -29,6 +29,8 @@ const SONNET_4 = price(3, 3.75, 6, 0.3, 15);
 
 /** By family and version, as priceKey() names them. Cache reads are not always a tenth of the input price. */
 const PRICES: Record<string, Price> = {
+  "fable-5-2": price(8, 10, 16, 0.2, 40),
+  "mythos-5-2": price(8, 10, 16, 0.2, 40),
   "fable-5-1": price(10, 12.5, 20, 0.25, 50),
   "mythos-5-1": price(10, 12.5, 20, 0.25, 50),
   "fable-5": price(10, 12.5, 20, 1, 50),

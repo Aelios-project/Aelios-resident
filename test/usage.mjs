@@ -37,6 +37,7 @@ for (const [name, key] of [
   ["claude-sonnet-4-20250514", "sonnet-4"],
   ["us.anthropic.claude-sonnet-4-6", "sonnet-4-6"],
   ["claude-fable-5-1", "fable-5-1"],
+  ["anthropic/claude-fable-5.2", "fable-5-2"],
   ["Claude-Haiku-5.5", "haiku-5-5"],
   ["claude-3-5-haiku-20241022", "haiku-3-5"],
   ["@cf/zai-org/glm-4.7-flash", null],
@@ -57,6 +58,8 @@ console.log("PASS a model is priced by its name whatever wraps it, and a dated o
 const opus = u.priceFor("anthropic/claude-opus-5.5");
 assert.deepEqual(opus, { input: 4, write5m: 5, write1h: 8, read: 0.2, output: 20 });
 assert.equal(u.priceFor("claude-fable-5-1").read, 0.25);
+assert.deepEqual(u.priceFor("anthropic/claude-fable-5.2"), { input: 8, write5m: 10, write1h: 16, read: 0.2, output: 40 });
+assert.deepEqual(u.priceFor("claude-mythos-5-2"), u.priceFor("claude-fable-5-2"));
 assert.equal(u.priceFor("claude-sonnet-5-5").read, 0.1);
 assert.equal(u.priceFor("claude-sonnet-5").read, 0.2);
 assert.equal(u.priceFor("claude-opus-4-8").read, 0.5);
