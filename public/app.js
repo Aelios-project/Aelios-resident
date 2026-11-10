@@ -98,7 +98,7 @@ function resident() {
   var BROWSE_MAX = 150;
   var RECORD_MAX_SECONDS = 60;
   // Shown first in the picker, under the ones used recently.
-  var FAVORITES = ['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-fable-5.1', 'anthropic/claude-haiku-5.5', '@cf/zai-org/glm-4.7-flash'];
+  var FAVORITES = ['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-fable-5.2', 'anthropic/claude-haiku-5.5', '@cf/zai-org/glm-4.7-flash'];
   // The settings: a list of sections, each opened on its own. A field marked `more` waits behind 更多设置. `labels`
   // names a choice in words; `helps`, `defs` and `picks` depend on the voice provider picked. The long `help` sits
   // behind a question mark next to each setting. Defaults are the code's (README, 设置).
