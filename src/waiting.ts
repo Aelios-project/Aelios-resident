@@ -1,8 +1,8 @@
-import type { AskKind } from "./machine-ask-kind";
 // The waiting list holds only what needs the owner's decision or action, in one fixed format (see the waiting-list spec in
 // Aelios-desktop); when it is empty, nothing needs them. News (a thread finished, a note it left) is not on it: it is an
 // unread count per thread, cleared by opening the thread. Computed when asked for, from asks, notes and each thread's
 // newest task. It never writes into the conversation.
+import type { AskKind } from "./machine-ask-kind";
 export const ASK_EXPIRES_MS = 7 * 86_400_000;
 export const ITEM_DROPPED_MS = 14 * 86_400_000;
 const LINE_MAX = 120;

@@ -33,11 +33,11 @@ const copy = (value) => JSON.parse(JSON.stringify(value));
 assert.ok(html.includes('<script src="/machine-ask-kind.js"></script>'), 'typed ask labels load on the page');
 const typedAskPage = vm.runInContext('testPage()', context);
 typedAskPage.thread = { loaded: true, runs: 'machine', helper: 'dsh', status: 'needs_you', tasks: [], asks: [{ kind: 'permission' }] };
-assert.match(typedAskPage.threadSub(), /Waiting for approval/);
+assert.match(typedAskPage.threadSub(), /等你批准/);
 typedAskPage.thread.asks = [{ kind: 'question' }];
-assert.match(typedAskPage.threadSub(), /Waiting for an answer/);
+assert.match(typedAskPage.threadSub(), /等你回答/);
 typedAskPage.thread.asks = [{}];
-assert.ok(!typedAskPage.threadSub().includes('Waiting for'), 'missing kind retains the existing thread status');
+assert.ok(!typedAskPage.threadSub().includes('等你批准') && !typedAskPage.threadSub().includes('等你回答'), 'missing kind retains the existing thread status');
 // Nothing the model or anyone else wrote is put into the page as HTML: every message, card and tool call is bound with x-text.
 assert.ok(!html.includes('x-html'), 'the page never binds HTML');
 // Buttons that do something show a small icon, not a word: each says what it does in title and aria-label.

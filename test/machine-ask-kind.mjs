@@ -75,12 +75,12 @@ await test("waiting and thread labels distinguish approval and answers while abs
   for (const file of ["public/machine-ask-kind.js", "public/waiting.js"]) vm.runInContext(readFileSync(file, "utf8"), context);
   const page = vm.runInContext("waitingPage()", context);
   const label = vm.runInContext("machineThreadAskLabel", context);
-  assert.equal(page.waitingKind({ kind: "ask", askKind: "permission" }), "Waiting for approval");
-  assert.equal(page.waitingKind({ kind: "ask", askKind: "question" }), "Waiting for an answer");
-  assert.notEqual(page.waitingKind({ kind: "ask" }), "Waiting for an answer", "legacy generic label remains unchanged");
+  assert.equal(page.waitingKind({ kind: "ask", askKind: "permission" }), "等你批准");
+  assert.equal(page.waitingKind({ kind: "ask", askKind: "question" }), "等你回答");
+  assert.notEqual(page.waitingKind({ kind: "ask" }), "等你回答", "legacy generic label remains unchanged");
   const thread = { runs: "machine", status: "needs_you", asks: [{ kind: "permission" }] };
-  assert.equal(label(thread), "Waiting for approval");
-  assert.equal(label({ ...thread, asks: [{ kind: "question" }] }), "Waiting for an answer");
+  assert.equal(label(thread), "等你批准");
+  assert.equal(label({ ...thread, asks: [{ kind: "question" }] }), "等你回答");
   assert.equal(label({ ...thread, asks: [{}] }), "");
   assert.equal(label({ ...thread, status: "done" }), "");
 });

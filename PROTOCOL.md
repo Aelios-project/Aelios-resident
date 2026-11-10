@@ -65,8 +65,8 @@ ask or receipt is stored. Kind participates in the receipt replay fingerprint.
 The example omits the normal receipt id, work id, token and summary for brevity.
 The resident retains kind on unresolved asks and returns it as `asks[].kind`
 on the thread page. Waiting items keep `kind: "ask"` and carry this subtype in
-`askKind`; the page labels these as "Waiting for approval" or "Waiting for an
-answer". Older rows and senders without kind retain their original labels.
+`askKind`; the page labels these as "等你批准" (waiting for approval) or "等你回答"
+(waiting for an answer). Older rows and senders without kind retain their original labels.
 A receipt permission ask is not a live `/permission` handle: it never acquires
 an Allow/Deny handle or grants a tool permission by itself. Existing reply,
 resolve and ask expiration behavior is unchanged.

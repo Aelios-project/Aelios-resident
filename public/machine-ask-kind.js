@@ -1,6 +1,6 @@
 // Receipt asks describe a completed turn waiting for input, not a live permission handle.
 function machineAskKindLabel(kind) {
-  return kind === 'permission' ? 'Waiting for approval' : kind === 'question' ? 'Waiting for an answer' : '';
+  return kind === 'permission' ? '等你批准' : kind === 'question' ? '等你回答' : '';
 }
 
 function machineThreadAskLabel(thread) {
