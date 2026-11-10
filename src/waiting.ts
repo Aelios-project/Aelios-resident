@@ -46,7 +46,8 @@ const NEEDS_SETTING =
 const NEEDS_PERMISSION = /\b(permission|not allowed|denied)\b|权限/i;
 
 /** What the runner says the owner can do for each reason it gives (machine.ts FAIL_REASONS). The others are only the thread's status. */
-const BY_REASON: Record<string, WaitingAction> = { needs_login: "settings", missing_key: "settings", permission_denied: "open", interrupted: "open" };
+// A refusal, a token limit or no result is a report to read, not a question: the owner opens the thread and decides.
+const BY_REASON: Record<string, WaitingAction> = { needs_login: "settings", missing_key: "settings", permission_denied: "open", interrupted: "open", refused: "open", token_limit: "open", no_result: "open" };
 
 /**
  * What the owner can do about a failed thread, if anything. A failure they can do nothing about is only the thread's
