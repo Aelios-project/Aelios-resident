@@ -377,3 +377,51 @@ await test("a turn's notes stay with its task: on the report, in the resident's 
   assert.equal(f.tasks.get(next.id).note, "", "a turn without notes has none");
   assert.equal(f.tasks.get(job.id).note, task.note, "the earlier turn keeps its own");
 });
+
+await test("the heartbeat keeps the helper and engine, answers what this resident accepts; a queued receipt may say how many go before", async () => {
+  const f = await paired();
+  const answer = await f.store.heartbeat(f.token, { plugin: "kiro", busy: null, label: "Mini", engine: "acpx@0.22.0" });
+  assert.deepEqual(answer.accepts, [...machine.ACCEPTS]);
+  for (const name of ["heartbeat.engine", "receipt.ahead", "reason.refused", "reason.token_limit", "reason.no_result"]) assert.ok(answer.accepts.includes(name), name);
+  assert.deepEqual(answer.limits, { summary: 4000 });
+  assert.deepEqual([f.store.status().machine.plugin, f.store.status().machine.engine], ["kiro", "acpx@0.22.0"]);
+  assert.equal(machine.machineHelper(f.store.status().machine), "kiro · acpx@0.22.0");
+  await f.store.heartbeat(f.token, { label: "Mini" });
+  assert.equal(f.store.status().machine.engine, "acpx@0.22.0", "a heartbeat without a plugin changes neither");
+  await f.store.heartbeat(f.token, { plugin: "dsh", busy: null });
+  assert.deepEqual([f.store.status().machine.plugin, f.store.status().machine.engine], ["dsh", ""], "an older runner that sends no engine leaves none from before");
+  assert.equal(machine.machineHelper(f.store.status().machine), "dsh");
+  for (const engine of ["", "a b", "x".repeat(41), 3, "acpx/0.22"]) await assert.rejects(f.store.heartbeat(f.token, { plugin: "kiro", engine }), code(400, "INVALID_HEARTBEAT"), String(engine));
+  // ahead: on a queued receipt only, 1 to 99.
+  const first = f.add("job");
+  const { work } = await f.store.poll(f.token, { claimKey: "ck_ahead001" });
+  const behind = f.add("job");
+  const { work: next } = await f.store.poll(f.token, { claimKey: "ck_ahead002", accept: ["job"] });
+  const queued = (extra) => ({ receiptId: `${next.workId}:queued`, workId: next.workId, token: next.token, type: "queued", ...extra });
+  for (const ahead of [0, 100, 1.5, "2"]) await assert.rejects(f.store.receipt(f.token, queued({ ahead })), code(400, "INVALID_RECEIPT"), String(ahead));
+  await assert.rejects(f.store.receipt(f.token, final(work, { ahead: 1 })), code(400, "INVALID_RECEIPT"), "not on a final");
+  await f.store.receipt(f.token, queued({ ahead: 2 }));
+  assert.equal(f.tasks.get(behind.id).progress, "排着队：前面还有 2 个");
+  await f.store.receipt(f.token, final(work, { status: "failed", summary: "The helper refused.", reason: "refused" }));
+  assert.equal(f.tasks.get(first.id).reason, "refused");
+  for (const reason of ["token_limit", "no_result"]) assert.ok(machine.FAIL_REASONS.includes(reason), reason);
+});
+
+await test("a machine table from before gets plugin and engine once, and pairing still works on it", async () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`CREATE TABLE res_machine (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, label TEXT NOT NULL, created_at INTEGER NOT NULL, last_seen_at INTEGER, revoked_at INTEGER)`);
+  db.exec(`INSERT INTO res_machine VALUES ('m_old', 'x', 'Old box', 1, NULL, 1)`);
+  const sql = (strings, ...values) => {
+    const statement = db.prepare(strings.join("?"));
+    return /^\s*SELECT/i.test(strings[0]) ? statement.all(...values) : (statement.run(...values), []);
+  };
+  const atomic = (fn) => { db.exec("BEGIN IMMEDIATE"); try { const out = fn(); db.exec("COMMIT"); return out; } catch (error) { db.exec("ROLLBACK"); throw error; } };
+  const tasks = new cloud.TaskStore(sql);
+  new machine.MachineStore(sql, tasks, atomic);
+  const store = new machine.MachineStore(sql, tasks, atomic);
+  assert.deepEqual(db.prepare("PRAGMA table_info(res_machine)").all().map((c) => c.name).slice(-2), ["plugin", "engine"]);
+  const { code: pc } = await store.code();
+  const { token } = await store.register({ label: "New box", code: pc }, false);
+  await store.heartbeat(token, { plugin: "kiro", engine: "legacy" });
+  assert.deepEqual([store.status().machine.label, store.status().machine.engine], ["New box", "legacy"]);
+});
