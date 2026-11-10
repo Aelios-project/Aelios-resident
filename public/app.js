@@ -1902,7 +1902,7 @@ function resident() {
       var latest = (this.thread.tasks || []).at(-1);
       // On the machine: which helper and engine its runner says it uses now.
       var helper = this.thread.runs === 'machine' && this.thread.helper ? '（' + this.thread.helper + '）' : '';
-      return this.runsText(this.thread.runs) + helper + (this.thread.loaded ? ' · ' + this.taskStatusText(latest ? this.stateOf(latest) : this.thread.status) : '');
+      return this.runsText(this.thread.runs) + helper + (this.thread.loaded ? ' · ' + (machineThreadAskLabel(this.thread) || this.taskStatusText(latest ? this.stateOf(latest) : this.thread.status)) : '');
     },
     // The task a report in the thread is for, while it waits for her.
     waitingFor(line) {
