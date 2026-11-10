@@ -169,7 +169,11 @@ function decide(options: LanguageModelV4CallOptions): { text: string; delayMs?: 
   if (said.includes("角色线程接着做")) return { tool: "cloud_task", input: { title: "接着干", job: "再看一遍。", execution: "local", follow_up_of: said.match(/t_[0-9a-f]{10}/)?.[0] } };
   if (said.includes("按角色派活")) return { tool: "cloud_task", input: { title: "按角色干", job: "看一下 README。", execution: "local", role: said.split("按角色派活")[1].trim() } };
   // The paired machine (machine.ts): what follows the words is the job, sent as it is.
-  if (said.includes("机器派活")) return { tool: "cloud_task", input: { title: "机器上干", job: said.split("机器派活")[1].trim(), execution: "machine" } };
+  if (said.includes("机器派活")) {
+    // Each job its own title: a new machine thread with an unfinished one's title would take that one over (takeover.ts).
+    const job = said.split("机器派活")[1].trim();
+    return { tool: "cloud_task", input: { title: `机器上干 ${job.split(/\s+/)[0]}`, job, execution: "machine" } };
+  }
   if (said.includes("机器记录几条")) return { text: `机器记录 ${prompt.filter((m) => textOf(m.content).includes("ran on their machine")).length} 条` };
   if (said.includes("机器接着派")) {
     const [, earlier, job] = said.match(/机器接着派 (t_[0-9a-f]{10}) ([\s\S]+)$/) ?? [];

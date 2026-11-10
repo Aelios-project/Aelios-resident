@@ -517,6 +517,7 @@ input.secret { -webkit-text-security: disc; font-family: var(--mono); }
 .tline.r-result { border-style: dashed; border-color: var(--line-dash); }
 .tline .who-l { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-3); }
 .tline .step-l { font-size: 12px; color: var(--text-4); overflow-wrap: anywhere; }
+.tline .note-l { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; padding-left: 8px; border-left: 2px solid var(--line); font-size: 13px; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .tline .text { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tline .text.md, .file-md { white-space: normal; }
 .file-md { font-size: 14px; line-height: 1.7; }

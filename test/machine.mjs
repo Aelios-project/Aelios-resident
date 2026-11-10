@@ -315,3 +315,65 @@ await test("progress writes nothing the web page shows; the quiet tag takes them
   assert.deepEqual(shown, [], "a step every few seconds must not change what the page reads");
   assert.deepEqual(store.steps.last(task.root), steps);
 });
+
+await test("the line: work behind a running turn says so on its card until it starts; a follow-up has its number; the thread's card says queued only when nothing of it runs", async () => {
+  const f = await paired();
+  const first = f.add("job");
+  assert.equal(f.tasks.get(first.id).queued, false, "nothing ahead of it");
+  const { work } = await f.store.poll(f.token, { claimKey: "ck_line0001" });
+  const other = f.add("job");
+  assert.equal(f.tasks.get(other.id).queued, true, "the machine is at work on another thread");
+  assert.equal(f.tasks.card(f.tasks.get(other.id)).queued, true);
+  assert.equal(f.tasks.get(other.id).progress, machine.QUEUED_LINE);
+  const follow = f.add("mail", f.tasks.get(first.id));
+  assert.equal(f.tasks.get(follow.id).queued, true, "a follow-up behind its own thread's turn waits too");
+  assert.deepEqual([f.tasks.card(f.tasks.get(first.id)).nth, f.tasks.card(f.tasks.get(follow.id)).nth, f.tasks.card(f.tasks.get(other.id)).nth], [1, 2, 1]);
+  const cards = new Map(f.tasks.threads().map((card) => [card.id, card]));
+  assert.equal(cards.get(other.root).queued, true, "nothing of that thread runs yet");
+  assert.equal(cards.get(first.root).queued, false, "its first task is at work");
+  // Taken while the first turn runs: still in line. The runner's queued receipt keeps it so; started ends it.
+  const { work: mail } = await f.store.poll(f.token, { claimKey: "ck_line0002", accept: ["say", "mail", "cancel"] });
+  assert.equal(mail.kind, "mail");
+  assert.equal(f.tasks.get(follow.id).queued, true);
+  await f.store.receipt(f.token, { receiptId: `${mail.workId}:queued`, workId: mail.workId, token: mail.token, type: "queued" });
+  assert.equal(f.tasks.get(follow.id).queued, true);
+  await f.store.receipt(f.token, final(work));
+  await f.store.receipt(f.token, { receiptId: `${mail.workId}:started`, workId: mail.workId, token: mail.token, type: "started" });
+  assert.equal(f.tasks.get(follow.id).queued, false);
+  assert.equal(f.tasks.card(f.tasks.get(follow.id)).queued, false);
+  await f.store.receipt(f.token, final(mail));
+  // Taken with nothing else running: not in line, and a finished one is never shown as queued.
+  const { work: next } = await f.store.poll(f.token, { claimKey: "ck_line0003" });
+  assert.equal(next.thread, other.root);
+  assert.equal(f.tasks.get(other.id).queued, false);
+  await f.store.receipt(f.token, final(next, { status: "failed", summary: "no" }));
+  assert.equal(f.tasks.card(f.tasks.get(other.id)).queued, false);
+  // Their own words go in at once, so they are not marked as waiting.
+  const busy = f.add("job");
+  await f.store.poll(f.token, { claimKey: "ck_line0004" });
+  const said = f.add("say", f.tasks.get(other.id));
+  assert.equal(f.tasks.get(said.id).queued, false);
+  assert.ok(busy);
+});
+
+await test("a turn's notes stay with its task: on the report, in the resident's note and record, gone when it runs again", async () => {
+  const f = await paired();
+  const job = f.add("job");
+  const { work } = await f.store.poll(f.token, { claimKey: "ck_note0001" });
+  await f.store.receipt(f.token, final(work, { summary: "Done. See above.", notice: { text: "process chain: runner > helper\n>>> second", fyi: true } }));
+  const task = f.tasks.get(job.id);
+  assert.equal(task.note, "process chain: runner > helper\n>>> second");
+  assert.equal(f.tasks.card(task).note, task.note);
+  const said = cloud.resultNote(task);
+  assert.match(said, /Notes it left for them along the way:\nprocess chain: runner > helper/);
+  assert.equal(said.match(/>>>/g).length, 1, "a note cannot close the fence");
+  const record = machine.machineRecord(task);
+  assert.match(record, /process chain: runner > helper/);
+  assert.equal(record.match(/>>>/g).length, 1);
+  assert.deepEqual(f.store.notes().map((n) => n.text), [task.note], "the waiting list still counts it as news");
+  const next = f.add("mail", task);
+  const { work: again } = await f.store.poll(f.token, { claimKey: "ck_note0002" });
+  await f.store.receipt(f.token, final(again, { summary: "second turn" }));
+  assert.equal(f.tasks.get(next.id).note, "", "a turn without notes has none");
+  assert.equal(f.tasks.get(job.id).note, task.note, "the earlier turn keeps its own");
+});
