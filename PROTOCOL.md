@@ -32,6 +32,25 @@ Poll returns `{ "work": null }` or a work object with `workId`, `token`, `thread
 `say` and `cancel`. The same claim key returns the same work. The machine alone
 chooses its helper, workspace and permission tier.
 
+### `job.model`
+
+When `accepts` contains `job.model`, a runner may use optional top-level `model`
+and `family` fields on non-cancellation work. `model` is the exact id configured
+on the role card. `family` is optional explicit metadata such as `anthropic`,
+`openai` or `kiro-auto`. Neither is inferred. Both are absent when the role has
+no model, even if a family is configured. Old runners ignore these fields.
+
+The resident freezes this selection when work is enqueued, including follow-ups
+that use the role. Editing or deleting the role later does not change retained
+work or claim replay. The thread page shows the most recent non-cancellation
+work's requested model beside the machine's current helper and engine. It is a
+request, not confirmation of the model actually used.
+
+Kiro always runs on `auto`. A runner supporting `job.model` must drop a model
+request on a Kiro machine and send an `fyi` notice in its final receipt. The
+resident preserves that notice as the turn's note. This PR does not implement
+that behavior in the separate runner repository.
+
 ## Receipts and asks
 
 Receipts use `<workId>:<type>` as their id. Identical replay succeeds as a

@@ -340,9 +340,9 @@ assert.deepEqual([page.editingRole(page.roleRows()[0]), page.roleRows().length],
 page.editRole(null);
 const rows = page.roleRows();
 assert.deepEqual([rows.length, page.editingRole(rows[0]), page.editingRole(rows[1])], [2, false, true]);
-Object.assign(page.roleEdit, { name: 'tester', template: '跑测试。', pick: '…', own: ' x/own ' });
+Object.assign(page.roleEdit, { name: 'tester', template: 'Run tests.', pick: '…', own: ' x/own ', family: 'openai' });
 await page.saveRole();
-assert.equal(JSON.stringify(roleCalls.at(-1)), JSON.stringify(['/web/tasks/roles', { name: 'tester', template: '跑测试。', model: 'x/own' }]));
+assert.equal(JSON.stringify(roleCalls.at(-1)), JSON.stringify(['/web/tasks/roles', { name: 'tester', template: 'Run tests.', model: 'x/own', family: 'openai' }]));
 assert.equal(page.roleEdit, null);
 assert.equal(page.cloud.roles.map((role) => role.name).join('|'), 'coder|tester');
 page.api = async (path, options) => { roleCalls.push([path, options.body]); return { roles: [] }; };
