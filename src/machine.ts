@@ -6,6 +6,7 @@
 import type { Sql } from "./sticker-store";
 import { MachineJobModels, requestedModelLabel } from "./machine-job-model";
 import type { RoleModel } from "./role-model";
+import { askKindFields, initAskKind, validAskKind, type AskKind } from "./machine-ask-kind";
 import { progressOf, StepStore, type Step } from "./thread-steps";
 import { ATTACH_MAX_THREAD, type Attachment } from "./attachments";
 import { PermStore, parsePermReport } from "./machine-perms";
@@ -39,14 +40,14 @@ export const FAIL_REASONS = ["permission_denied", "needs_login", "missing_key", 
  * What this resident takes beyond the first version of the protocol, named on every heartbeat's answer. A runner sends a
  * newer field or reason only when its name is here, so an older resident never gets something it refuses with a 400.
  */
-export const ACCEPTS = ["heartbeat.engine", "receipt.ahead", "reason.refused", "reason.token_limit", "reason.no_result", "job.model"] as const;
+export const ACCEPTS = ["heartbeat.engine", "receipt.ahead", "reason.refused", "reason.token_limit", "reason.no_result", "ask.kind", "job.model"] as const;
 /** How many places ahead of a queued turn a `queued` receipt may say. */
 const AHEAD_MAX = 99;
 
 type Machine = { id: string; token_hash: string; label: string; created_at: number; last_seen_at: number | null; revoked_at: number | null; plugin: string; engine: string };
 type Work = { work_id: string; machine_id: string; token: string; task_id: string; thread: string; kind: WorkKind; text: string; state: string; claim_key: string; lease_until: number | null; created_at: number; files: string };
 type Status = "done" | "failed" | "needs_you" | "cancelled";
-export type Ask = { key: string; question: string; options: string[]; recommend: string };
+export type Ask = { kind?: AskKind; key: string; question: string; options: string[]; recommend: string };
 type Receipt = { receiptId: string; workId: string; token: string; type: "started" | "queued" | "final"; sessionId: string; status?: Status; summary?: string; reason?: string; ask?: Ask; notice?: { text: string; fyi: boolean }; resolve: string[]; ahead?: number };
 
 export class MachineError extends Error {
@@ -133,9 +134,12 @@ function receiptOf(input: unknown): Receipt {
   }
   if (body.ask !== undefined) {
     const ask = object(body.ask);
+    const kind = ask.kind;
+    if (!validAskKind(kind)) return fail(400, "INVALID_RECEIPT", "ask.kind is permission or question when supplied");
     const options = Array.isArray(ask.options) ? ask.options : [];
     if (typeof ask.key !== "string" || !KEY.test(ask.key) || typeof ask.question !== "string" || !ask.question.trim()) fail(400, "INVALID_RECEIPT", "ask needs a key and a question");
     receipt.ask = {
+      ...(kind === undefined ? {} : { kind }),
       key: ask.key as string,
       question: text(ask.question, SUMMARY_MAX),
       options: [...new Set(options.map((option) => text(option, 40)).filter(Boolean))].slice(0, OPTIONS_MAX),
@@ -179,6 +183,7 @@ export class MachineStore {
     // What a thread asks them, until it is resolved: the waiting list reads these.
     sql`CREATE TABLE IF NOT EXISTS res_machine_asks (thread TEXT NOT NULL, key TEXT NOT NULL, task_id TEXT NOT NULL, question TEXT NOT NULL,
       options TEXT NOT NULL, recommend TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (thread, key))`;
+    initAskKind(sql);
     // What a thread told them without needing an answer (the receipt's notice), one per work.
     sql`CREATE TABLE IF NOT EXISTS res_machine_notes (work_id TEXT PRIMARY KEY, thread TEXT NOT NULL, task_id TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL)`;
     this.steps = new StepStore(quiet);
@@ -415,9 +420,9 @@ export class MachineStore {
     }
     // An ask is kept until a later receipt resolves it; the waiting list reads it.
     if (receipt.ask) {
-      this.sql`INSERT INTO res_machine_asks VALUES (${work.thread}, ${receipt.ask.key}, ${work.task_id}, ${receipt.ask.question}, ${JSON.stringify(receipt.ask.options)},
-        ${receipt.ask.recommend}, ${Date.now()}) ON CONFLICT(thread, key) DO UPDATE SET task_id = excluded.task_id, question = excluded.question,
-        options = excluded.options, recommend = excluded.recommend, at = excluded.at`;
+      this.sql`INSERT INTO res_machine_asks (thread, key, task_id, question, options, recommend, at, kind) VALUES (${work.thread}, ${receipt.ask.key}, ${work.task_id}, ${receipt.ask.question}, ${JSON.stringify(receipt.ask.options)},
+        ${receipt.ask.recommend}, ${Date.now()}, ${receipt.ask.kind ?? ""}) ON CONFLICT(thread, key) DO UPDATE SET task_id = excluded.task_id, question = excluded.question,
+        options = excluded.options, recommend = excluded.recommend, at = excluded.at, kind = excluded.kind`;
     }
     for (const key of receipt.resolve) {
       const [open] = this.sql<{ task_id: string }>`SELECT task_id FROM res_machine_asks WHERE thread = ${work.thread} AND key = ${key}`;
@@ -435,8 +440,8 @@ export class MachineStore {
 
   /** Every open ask, of every thread (the waiting list). */
   allAsks(): (Ask & { thread: string; task: string; at: number })[] {
-    return this.sql<{ thread: string; task_id: string; key: string; question: string; options: string; recommend: string; at: number }>`SELECT * FROM res_machine_asks ORDER BY at DESC`
-      .map((row) => ({ thread: row.thread, task: row.task_id, key: row.key, question: row.question, options: JSON.parse(row.options) as string[], recommend: row.recommend, at: row.at }));
+    return this.sql<{ thread: string; task_id: string; key: string; question: string; options: string; recommend: string; at: number; kind: string }>`SELECT * FROM res_machine_asks ORDER BY at DESC`
+      .map((row) => ({ ...askKindFields(row.kind), thread: row.thread, task: row.task_id, key: row.key, question: row.question, options: JSON.parse(row.options) as string[], recommend: row.recommend, at: row.at }));
   }
 
   /** The notes threads left (the waiting list). */
@@ -447,7 +452,8 @@ export class MachineStore {
 
   /** What a thread asks them and has not been resolved, the newest first. */
   asks(thread: string): Ask[] {
-    return this.sql<{ key: string; question: string; options: string; recommend: string }>`SELECT * FROM res_machine_asks WHERE thread = ${thread} ORDER BY at DESC`.map((row) => ({
+    return this.sql<{ key: string; question: string; options: string; recommend: string; kind: string }>`SELECT * FROM res_machine_asks WHERE thread = ${thread} ORDER BY at DESC`.map((row) => ({
+      ...askKindFields(row.kind),
       key: row.key,
       question: row.question,
       options: JSON.parse(row.options) as string[],

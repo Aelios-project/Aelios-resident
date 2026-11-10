@@ -2,6 +2,7 @@
 // Aelios-desktop); when it is empty, nothing needs them. News (a thread finished, a note it left) is not on it: it is an
 // unread count per thread, cleared by opening the thread. Computed when asked for, from asks, notes and each thread's
 // newest task. It never writes into the conversation.
+import type { AskKind } from "./machine-ask-kind";
 export const ASK_EXPIRES_MS = 7 * 86_400_000;
 export const ITEM_DROPPED_MS = 14 * 86_400_000;
 const LINE_MAX = 120;
@@ -24,11 +25,13 @@ export type WaitingItem = {
   /** A permission the machine holds: its id (the Allow / Deny buttons answer it) and the redacted command it asks to run. */
   perm?: string;
   detail?: string;
+  /** Receipt ask subtype; distinct from a live held permission item. */
+  askKind?: AskKind;
 };
 
 export type WaitingInput = {
   /** Open asks of threads on the machine. */
-  asks: { thread: string; task: string; key: string; question: string; options: string[]; recommend: string; at: number }[];
+  asks: { kind?: AskKind; thread: string; task: string; key: string; question: string; options: string[]; recommend: string; at: number }[];
   /** Permissions the machine holds for the owner. */
   perms?: { id: string; thread: string; task: string; title: string; kind: string; detail: string; at: number }[];
   /** Notes a thread left with its last receipt. */
@@ -81,7 +84,7 @@ export function build({ asks, perms = [], notes, threads, seen, now }: WaitingIn
   for (const ask of asks) {
     if (!title.has(ask.thread) || now - ask.at > ASK_EXPIRES_MS) continue;
     put({ id: `${ask.thread}:ask:${ask.key}`, kind: "ask", thread: ask.thread, task: ask.task, title: title.get(ask.thread)!, line: firstSentence(ask.question),
-      options: ask.options, recommend: ask.recommend, at: ask.at, action: "" });
+      options: ask.options, recommend: ask.recommend, at: ask.at, action: "", ...(ask.kind ? { askKind: ask.kind } : {}) });
   }
   for (const perm of perms) {
     if (!title.has(perm.thread)) continue;

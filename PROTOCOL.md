@@ -63,3 +63,36 @@ and optional `options` and `recommend`. `resolve` clears earlier ask keys.
 Failed finals may use the advertised reasons `refused`, `token_limit` and
 `no_result`. These are failure reports that the user opens, not questions.
 Unknown top-level receipt fields and invalid field values return 400.
+
+### `ask.kind`
+
+A runner sends the optional nested `ask.kind` only after the heartbeat's
+`accepts` contains `ask.kind`. Its only values are `permission` (waiting for
+approval) and `question` (waiting for an answer). An absent kind keeps the
+original generic waiting behavior. Invalid values, including `problem`, null,
+an empty string, numbers and objects, return 400 `INVALID_RECEIPT` before any
+ask or receipt is stored. Kind participates in the receipt replay fingerprint.
+
+```json
+{
+  "type": "final",
+  "status": "needs_you",
+  "ask": { "key": "decision", "question": "Continue?", "kind": "permission" }
+}
+```
+
+The example omits the normal receipt id, work id, token and summary for brevity.
+The resident retains kind on unresolved asks and returns it as `asks[].kind`
+on the thread page. Waiting items keep `kind: "ask"` and carry this subtype in
+`askKind`; the page labels these as "等你批准" (waiting for approval) or "等你回答"
+(waiting for an answer). Older rows and senders without kind retain their original labels.
+A receipt permission ask is not a live `/permission` handle: it never acquires
+an Allow/Deny handle or grants a tool permission by itself. Existing reply,
+resolve and ask expiration behavior is unchanged.
+
+A helper that has stopped because of refusal, a token limit or no result sends
+a failed final with the appropriate advertised reason, not a `problem` ask.
+
+Verification: `npm run typecheck`, `node test/machine-ask-kind.mjs`,
+`node test/machine.mjs`, `node test/waiting.mjs`, `node test/machine-perms.mjs`,
+and `node test/web-ui.mjs`.
