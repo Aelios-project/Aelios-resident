@@ -212,7 +212,7 @@ import { activityOf, WebDraft, type Activity } from "./web/history";
 import { GROUPS_MAX, GROUP_HEAD, GROUP_PICTURES_MAX, GROUP_TEXT_MAX, GroupStore, HER, afterTurn, cleanReply, groupConfigFrom, groupHeard, membersOf, named, speakersFor, type Group, type GroupLine, type GroupSticker, type Member } from "./group";
 import { AROUND, SEARCH_PAGE, SEARCH_ROWS, hitIn, searchQuery, searchable, storedLike, type ChatHit, type ChatLine } from "./chat-search";
 import { findTools, type FindHost } from "./find-tools";
-import { RoleStore, unknownRole, withRole, type Role } from "./task-roles";
+import { RECOMMENDED_ROLES, ROLES_MAX, RoleStore, unknownRole, withRole, type Role } from "./task-roles";
 import { MadeFiles, fileTools, type FileHost, type MadeFile } from "./made-files";
 import { PERSONA_MAX_CHARS, personaTools } from "./persona-edit";
 import { USAGE_KEEP_DAYS, UsageStore, creditsEntry, entryOf, usageLabel, usageSpans, type StepLike, type UsageLabel, type UsageRow, type UsageTotals } from "./usage";
@@ -2053,6 +2053,8 @@ export class Resident extends Think<Env> {
     tasks: TaskCard[];
     open: number;
     roles: Role[];
+    recommendedRoles: readonly Role[];
+    rolesMax: number;
   }> {
     if (origin) await this.noteOrigin(origin);
     const own = (await this.ctx.storage.get<string>("origin")) ?? "";
@@ -2075,7 +2077,9 @@ export class Resident extends Think<Env> {
       open: this.cloudTasks()
         .threads()
         .filter((thread) => thread.status === "sent" || thread.status === "working" || thread.waiting).length,
-      roles: this.taskRoles().list()
+      roles: this.taskRoles().list(),
+      recommendedRoles: RECOMMENDED_ROLES,
+      rolesMax: ROLES_MAX
     };
   }
 

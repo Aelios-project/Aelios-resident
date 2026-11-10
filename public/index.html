@@ -41,6 +41,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
 <script src="/machine-ask-kind.js"></script>
 <script src="/waiting.js"></script>
 <script src="/progress.js"></script>
+<script src="/recommended-roles.js"></script>
 <script src="/app.js"></script>
 <script defer src="/vendor/alpine-3.14.9.min.js"></script>
 </head>
@@ -1153,6 +1154,20 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
                     </template>
                   </div>
                 </template>
+                <details x-show="(cloud.recommendedRoles || []).length">
+                  <summary>推荐角色包</summary>
+                  <p class="hint">按需逐个安装，不会自动加入；安装后可以编辑或删除。最多 <span x-text="cloud.rolesMax || 12"></span> 个角色。</p>
+                  <template x-for="pack in (cloud.recommendedRoles || [])" :key="pack.name">
+                    <div class="mini-row">
+                      <div class="top-line"><span class="t" x-text="pack.name"></span><span class="spacer"></span>
+                        <span class="pill" x-show="recommendedRoleInstalled(pack)">已安装</span>
+                        <button class="icon-btn sm" type="button" :disabled="roleBusy || Boolean(roleEdit) || recommendedRoleFull() || recommendedRoleInstalled(pack)" @click="installRecommendedRole(pack)" :aria-label="'安装 ' + pack.name" :title="'安装 ' + pack.name"><i class="i i-plus" aria-hidden="true"></i></button>
+                      </div>
+                      <p class="hint" style="white-space: pre-wrap" x-text="pack.template"></p>
+                    </div>
+                  </template>
+                  <p class="hint" x-show="recommendedRoleFull()">角色已满，先删掉一个再安装。</p>
+                </details>
                 <p class="error" x-show="roleError" x-text="roleError"></p>
               </div>
             </template>
