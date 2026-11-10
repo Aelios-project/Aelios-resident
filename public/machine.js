@@ -42,7 +42,12 @@ function machinePage() {
     machineState() {
       var m = this.machine.machine;
       if (!m) return '还没配';
-      return m.label + (m.online ? ' · 在线' : ' · 不在线' + (m.lastSeenAt ? '（上次 ' + this.fmt(m.lastSeenAt) + '）' : '（还没连上过）'));
+      return m.label + this.machineHelper(m) + (m.online ? ' · 在线' : ' · 不在线' + (m.lastSeenAt ? '（上次 ' + this.fmt(m.lastSeenAt) + '）' : '（还没连上过）'));
+    },
+    // Which helper the runner drives and how it talks to it, as its last heartbeat said; '' before a runner that says.
+    machineHelper(m) {
+      var parts = m ? [m.plugin, m.engine].filter(Boolean) : [];
+      return parts.length ? ' · ' + parts.join(' · ') : '';
     },
     machineCommand() {
       var resident = this.resident && this.resident !== 'default' ? ' --resident ' + this.resident : '';

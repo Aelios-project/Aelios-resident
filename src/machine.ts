@@ -26,14 +26,24 @@ export type WorkKind = (typeof KINDS)[number];
 const ID = /^[A-Za-z0-9_.:-]{1,64}$/;
 const SESSION = /^[A-Za-z0-9_.:-]{1,160}$/;
 const KEY = /^.{1,200}$/s;
-/** Why a failed turn failed, as the runner knows it (PROTOCOL.md). Only a failed final may carry one. */
-export const FAIL_REASONS = ["permission_denied", "needs_login", "missing_key", "helper_missing", "workspace_denied", "interrupted", "error"] as const;
+/**
+ * Why a failed turn failed, as the runner knows it (PROTOCOL.md). Only a failed final may carry one. `refused`,
+ * `token_limit` and `no_result` came later: the runner sends them only once ACCEPTS names them.
+ */
+export const FAIL_REASONS = ["permission_denied", "needs_login", "missing_key", "helper_missing", "workspace_denied", "interrupted", "error", "refused", "token_limit", "no_result"] as const;
+/**
+ * What this resident takes beyond the first version of the protocol, named on every heartbeat's answer. A runner sends a
+ * newer field or reason only when its name is here, so an older resident never gets something it refuses with a 400.
+ */
+export const ACCEPTS = ["heartbeat.engine", "receipt.ahead", "reason.refused", "reason.token_limit", "reason.no_result"] as const;
+/** How many places ahead of a queued turn a `queued` receipt may say. */
+const AHEAD_MAX = 99;
 
-type Machine = { id: string; token_hash: string; label: string; created_at: number; last_seen_at: number | null; revoked_at: number | null };
+type Machine = { id: string; token_hash: string; label: string; created_at: number; last_seen_at: number | null; revoked_at: number | null; plugin: string; engine: string };
 type Work = { work_id: string; machine_id: string; token: string; task_id: string; thread: string; kind: WorkKind; text: string; state: string; claim_key: string; lease_until: number | null; created_at: number; files: string };
 type Status = "done" | "failed" | "needs_you" | "cancelled";
 export type Ask = { key: string; question: string; options: string[]; recommend: string };
-type Receipt = { receiptId: string; workId: string; token: string; type: "started" | "queued" | "final"; sessionId: string; status?: Status; summary?: string; reason?: string; ask?: Ask; notice?: { text: string; fyi: boolean }; resolve: string[] };
+type Receipt = { receiptId: string; workId: string; token: string; type: "started" | "queued" | "final"; sessionId: string; status?: Status; summary?: string; reason?: string; ask?: Ask; notice?: { text: string; fyi: boolean }; resolve: string[]; ahead?: number };
 
 export class MachineError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
@@ -91,7 +101,7 @@ export async function machineReply(operation: () => unknown): Promise<{ status: 
 
 function receiptOf(input: unknown): Receipt {
   const body = object(input);
-  const allowed = ["receiptId", "workId", "token", "type", "sessionId", "status", "summary", "reason", "ask", "notice", "resolve"];
+  const allowed = ["receiptId", "workId", "token", "type", "sessionId", "status", "summary", "reason", "ask", "notice", "resolve", "ahead"];
   if (Object.keys(body).some((key) => !allowed.includes(key))) fail(400, "INVALID_RECEIPT", "the receipt has a field the protocol does not name");
   const { receiptId, workId, token, type } = body;
   if (typeof workId !== "string" || !ID.test(workId) || typeof token !== "string" || !token || token.length > 200) fail(400, "INVALID_RECEIPT", "workId or token is not valid");
@@ -102,6 +112,11 @@ function receiptOf(input: unknown): Receipt {
   const resolve = body.resolve === undefined ? [] : body.resolve;
   if (!Array.isArray(resolve) || resolve.length > 50 || resolve.some((key) => typeof key !== "string" || !KEY.test(key))) fail(400, "INVALID_RECEIPT", "resolve is a list of up to 50 keys");
   const receipt: Receipt = { receiptId: receiptId as string, workId: workId as string, token: token as string, type: type as Receipt["type"], sessionId: sessionId as string, resolve: resolve as string[] };
+  if (body.ahead !== undefined) {
+    // How many turns go before this one on the machine: the running one and those queued before it.
+    if (type !== "queued" || !Number.isInteger(body.ahead) || (body.ahead as number) < 1 || (body.ahead as number) > AHEAD_MAX) fail(400, "INVALID_RECEIPT", `ahead is a whole number from 1 to ${AHEAD_MAX}, on a queued receipt only`);
+    receipt.ahead = body.ahead as number;
+  }
   if (type !== "final") return receipt;
   if (!["done", "failed", "needs_you", "cancelled"].includes(String(body.status))) fail(400, "INVALID_RECEIPT", "status is done, failed, needs_you or cancelled");
   const summary = typeof body.summary === "string" ? body.summary.trim() : "";
@@ -150,6 +165,9 @@ export class MachineStore {
     sql`CREATE TABLE IF NOT EXISTS res_machine_code (code_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)`;
     sql`CREATE TABLE IF NOT EXISTS res_machine_work (work_id TEXT PRIMARY KEY, machine_id TEXT NOT NULL, token TEXT NOT NULL, task_id TEXT NOT NULL,
       thread TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL, state TEXT NOT NULL, claim_key TEXT NOT NULL, lease_until INTEGER, created_at INTEGER NOT NULL)`;
+    // Which helper the runner drives and how it talks to it, as its heartbeat says: columns added after the table first shipped.
+    if (!sql<{ n: number }>`SELECT COUNT(*) AS n FROM pragma_table_info('res_machine') WHERE name = 'plugin'`[0].n) sql`ALTER TABLE res_machine ADD COLUMN plugin TEXT NOT NULL DEFAULT ''`;
+    if (!sql<{ n: number }>`SELECT COUNT(*) AS n FROM pragma_table_info('res_machine') WHERE name = 'engine'`[0].n) sql`ALTER TABLE res_machine ADD COLUMN engine TEXT NOT NULL DEFAULT ''`;
     // Pictures and files handed along with a message (a JSON list of Attachment), a column added after the table first shipped.
     if (!sql<{ n: number }>`SELECT COUNT(*) AS n FROM pragma_table_info('res_machine_work') WHERE name = 'files'`[0].n) sql`ALTER TABLE res_machine_work ADD COLUMN files TEXT NOT NULL DEFAULT '[]'`;
     sql`CREATE TABLE IF NOT EXISTS res_machine_receipts (receipt_id TEXT PRIMARY KEY, work_id TEXT NOT NULL, fingerprint TEXT NOT NULL)`;
@@ -173,7 +191,7 @@ export class MachineStore {
   /** For the settings page: the paired machine, if any. Never a token. */
   status() {
     const machine = this.active();
-    return { protocol: RUNNER_PROTOCOL, machine: machine && { id: machine.id, label: machine.label, pairedAt: machine.created_at, lastSeenAt: machine.last_seen_at, online: this.online(machine) } };
+    return { protocol: RUNNER_PROTOCOL, machine: machine && { id: machine.id, label: machine.label, plugin: machine.plugin ?? "", engine: machine.engine ?? "", pairedAt: machine.created_at, lastSeenAt: machine.last_seen_at, online: this.online(machine) } };
   }
 
   /** A one-time pairing code for the runner, good for 10 minutes; a new one replaces the last. */
@@ -199,7 +217,7 @@ export class MachineStore {
       }
       if (this.active()) fail(409, "MACHINE_EXISTS", "这个住户已经配了一台机器；先在设置页撤销它");
       this.sql`DELETE FROM res_machine_code`;
-      this.sql`INSERT INTO res_machine VALUES (${runnerId}, ${tokenHash}, ${label}, ${Date.now()}, ${null}, ${null})`;
+      this.sql`INSERT INTO res_machine (id, token_hash, label, created_at, last_seen_at, revoked_at) VALUES (${runnerId}, ${tokenHash}, ${label}, ${Date.now()}, ${null}, ${null})`;
       return { runnerId, token, protocol: RUNNER_PROTOCOL };
     });
   }
@@ -247,17 +265,25 @@ export class MachineStore {
     return machine!;
   }
 
-  /** The body is optional: the runner's plugin and what it is busy with (not kept), and the computer's name, which renames the machine. */
+  /**
+   * The body is optional: the runner's plugin and how it talks to the helper (`engine`, e.g. "acpx@0.22.0" or "legacy"),
+   * kept and shown with the machine; what it is busy with (not kept); and the computer's name, which renames the machine.
+   * A heartbeat with a plugin replaces both, so an engine an older runner does not send is not left from before.
+   * The answer names what this resident accepts beyond the first version (ACCEPTS) and its limits.
+   */
   async heartbeat(token: string, input: unknown = {}) {
     const machine = await this.#machine(token);
     const body = object(input);
-    if (Object.keys(body).some((key) => !["plugin", "busy", "label"].includes(key))) fail(400, "INVALID_HEARTBEAT", "the heartbeat has a field the protocol does not name");
+    if (Object.keys(body).some((key) => !["plugin", "busy", "label", "engine"].includes(key))) fail(400, "INVALID_HEARTBEAT", "the heartbeat has a field the protocol does not name");
+    if (body.engine !== undefined && (typeof body.engine !== "string" || !/^[A-Za-z0-9@._+-]{1,40}$/.test(body.engine))) fail(400, "INVALID_HEARTBEAT", "engine is a name of up to 40 letters, digits and @._+-");
     const label = text(body.label, 60);
+    const plugin = body.plugin === undefined ? null : text(body.plugin, 40);
     return this.atomic(() => {
       this.#seen(machine);
       if (label && label !== machine.label) this.sql`UPDATE res_machine SET label = ${label} WHERE id = ${machine.id}`;
+      if (plugin !== null) this.sql`UPDATE res_machine SET plugin = ${plugin}, engine = ${(body.engine as string | undefined) ?? ""} WHERE id = ${machine.id}`;
       this.sql`UPDATE res_machine_work SET lease_until = ${Date.now() + LEASE_MS} WHERE machine_id = ${machine.id} AND state = 'claimed'`;
-      return { ok: true, protocol: RUNNER_PROTOCOL };
+      return { ok: true, protocol: RUNNER_PROTOCOL, accepts: [...ACCEPTS], limits: { summary: SUMMARY_MAX } };
     });
   }
 
@@ -353,7 +379,7 @@ export class MachineStore {
         return { ok: true as const };
       }
       if (receipt.type === "queued") {
-        this.tasks.progress(work!.task_id, "排在这条线程正在干的后面");
+        this.tasks.progress(work!.task_id, receipt.ahead ? `排着队：前面还有 ${receipt.ahead} 个` : "排在这条线程正在干的后面");
         return { ok: true as const };
       }
       return { ok: true as const, finished: this.#finish(work!, receipt) };
@@ -464,6 +490,11 @@ export class MachineStore {
     const title = this.tasks.get(work.task_id)?.title ?? "";
     return { workId: work.work_id, token: work.token, thread: work.thread, kind: work.kind, title, ...(work.kind === "cancel" ? {} : { text: work.text }), ...(work.kind === "say" ? { interrupt: true } : {}), ...(work.files && work.files !== "[]" ? { attachments: JSON.parse(work.files) as Attachment[] } : {}) };
   }
+}
+
+/** The machine's helper and engine in a few words ("kiro · acpx@0.22.0"), or "" when its runner has not said. */
+export function machineHelper(machine: { plugin: string; engine: string } | null): string {
+  return machine ? [machine.plugin, machine.engine].filter(Boolean).join(" · ") : "";
 }
 
 /** The note a machine thread's result leaves in the resident's conversation: a record, not a turn (hidden on her page like a task note). */

@@ -89,6 +89,8 @@ try {
     assert.ok(!(await web("/web/threads")).data.threads.some((t) => t.runs === "machine"));
     runner = spawn(process.execPath, [RUNNER, "start"], { env, stdio: ["ignore", "ignore", "pipe"] });
     await until(async () => (await web("/web/runner")).data.machine?.online, "the machine online");
+    // Its heartbeat says which helper it drives (a runner that names its engine shows that too).
+    assert.equal((await web("/web/runner")).data.machine.plugin, "command");
   });
 
   let first;

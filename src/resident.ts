@@ -147,7 +147,7 @@ import {
 } from "./cloud-tasks";
 import { WaitingStore } from "./waiting-store";
 import { carryOver, markTakenOver, stillTakeable, unfinishedWithTitle } from "./takeover";
-import { MachineError, MachineStore, machineRecord, machineReply, type Ask, type Finished, type WorkKind } from "./machine";
+import { MachineError, MachineStore, machineHelper, machineRecord, machineReply, type Ask, type Finished, type WorkKind } from "./machine";
 import { wakesResident } from "./machine-wake";
 import { ATTACH_MARK, ATTACH_MAX_FILES, keep, loadAll, loadFile, markedFile, type Attachment } from "./attachments";
 import { chatLine, openFileTools, summarize } from "./file-summary";
@@ -388,6 +388,8 @@ export type WebThread = {
   canSay: boolean;
   /** On the machine: what the thread asks them and has not been resolved. */
   asks?: Ask[];
+  /** On the machine: its helper and engine as the runner says now ("kiro · acpx@0.22.0"); "" before a runner that says. */
+  helper?: string;
   /** On the machine, while it works: the last few things it did. */
   steps?: Step[];
 };
@@ -2161,7 +2163,7 @@ export class Resident extends Think<Env> {
       lines,
       files,
       canSay: this.cloudTasksOn() && (latest.runs === "local" || latest.runs === "machine"),
-      ...(latest.runs === "machine" ? { asks: this.machines().asks(root) } : {}),
+      ...(latest.runs === "machine" ? { asks: this.machines().asks(root), helper: machineHelper(this.machines().status().machine) } : {}),
       ...(latest.runs === "machine" && latest.status === "working" ? { steps: this.machines().steps.last(root, 3) } : {})
     };
   }
