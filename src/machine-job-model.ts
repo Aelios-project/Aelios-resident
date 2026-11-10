@@ -1,20 +1,20 @@
 import type { Sql } from "./sticker-store";
-import { roleModel, type RoleModel } from "./role-model";
+import { machinePick, type MachinePick } from "./role-model";
 
-/** A work item's requested model, frozen when dispatched rather than looked up when polled. */
+/** A work item's requested model, frozen when it is put in line rather than looked up when it is polled. */
 export class MachineJobModels {
   constructor(private readonly sql: Sql) {
     sql`CREATE TABLE IF NOT EXISTS res_machine_models (work_id TEXT PRIMARY KEY, model TEXT NOT NULL, family TEXT NOT NULL)`;
   }
 
-  set(workId: string, role: RoleModel | null): void {
-    const selected = roleModel(role);
-    if (selected.model) this.sql`INSERT INTO res_machine_models VALUES (${workId}, ${selected.model}, ${selected.family ?? ""})`;
+  set(workId: string, role: MachinePick | null): void {
+    const { model, family } = machinePick(role);
+    if (model) this.sql`INSERT INTO res_machine_models (work_id, model, family) VALUES (${workId}, ${model}, ${family ?? ""})`;
   }
 
   get(workId: string): { model?: string; family?: string } {
     const [row] = this.sql<{ model: string; family: string }>`SELECT model, family FROM res_machine_models WHERE work_id = ${workId}`;
-    return roleModel(row ?? null);
+    return row?.model ? { model: row.model, ...(row.family ? { family: row.family } : {}) } : {};
   }
 
   forThread(thread: string): string {
@@ -29,7 +29,7 @@ export class MachineJobModels {
   }
 }
 
-/** This is a request, not a claim about which model the helper actually ran. */
+/** A request, not a claim about which model the helper ran. */
 export function requestedModelLabel(helper: string, model: string): string {
-  return [helper, model ? `requested model: ${model}` : ""].filter(Boolean).join(" · ");
+  return [helper, model ? `要的模型 ${model}` : ""].filter(Boolean).join(" · ");
 }

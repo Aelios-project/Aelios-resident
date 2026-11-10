@@ -35,16 +35,20 @@ chooses its helper, workspace and permission tier.
 ### `job.model`
 
 When `accepts` contains `job.model`, a runner may use optional top-level `model`
-and `family` fields on non-cancellation work. `model` is the exact id configured
-on the role card. `family` is optional explicit metadata such as `anthropic`,
-`openai` or `kiro-auto`. Neither is inferred. Both are absent when the role has
-no model, even if a family is configured. Old runners ignore these fields.
+and `family` fields on non-cancellation work. `work.model` comes from the role
+card's separate `machineModel` field, the exact id accepted by the helper.
+The card's `model` field selects the cloud thread model and is never used as a
+machine fallback. `work.family` comes from the optional explicit `family` on the
+card, such as `anthropic`, `openai` or `kiro-auto`. Neither is inferred. Both
+work fields are absent when the card has no `machineModel`, even if a cloud
+model or family is configured. Old runners ignore these fields.
 
 The resident freezes this selection when work is enqueued, including follow-ups
 that use the role. Editing or deleting the role later does not change retained
 work or claim replay. The thread page shows the most recent non-cancellation
-work's requested model beside the machine's current helper and engine. It is a
-request, not confirmation of the model actually used.
+work's requested model beside the machine's current helper and engine, except
+when the helper is Kiro (which always uses auto). It is a request, not
+confirmation of the model actually used.
 
 Kiro always runs on `auto`. A runner supporting `job.model` must drop a model
 request on a Kiro machine and send an `fyi` notice in its final receipt. The

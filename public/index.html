@@ -1124,7 +1124,8 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
               <div class="set roles">
                 <div class="label"><span>角色</span><span class="spacer"></span>
                   <button class="icon-btn sm" type="button" x-show="!roleEdit && cloud.roles.length < 12" @click="editRole(null)" aria-label="加一个角色" title="加一个角色"><i class="i i-plus" aria-hidden="true"></i></button></div>
-                <p class="hint">Roles provide job instructions and an optional model. Machine jobs request that exact model; Kiro stays on auto.</p>
+                <p class="hint">派活时带上角色，要求就不用每次从头写。选的模型管住户这里和 GitHub Actions 上的线程。</p>
+                <p class="hint" x-show="machine.machine">派到机器上的活另填「机器上的模型」：写帮手自己认的 id（比如 Claude Code 的 claude-sonnet-4-6），不是上面那种 anthropic/… 的写法；不填就用帮手默认的。Kiro 一直用 auto，不用填。</p>
                 <template x-for="row in roleRows()" :key="row.key">
                   <div class="mini-row">
                     <template x-if="!editingRole(row)">
@@ -1146,7 +1147,8 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
                           <option value="…">自己填…</option>
                         </select>
                         <input x-show="roleEdit.pick === '…'" x-model="roleEdit.own" type="text" placeholder="模型 id，比如 anthropic/claude-haiku-5.5" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="模型 id">
-                        <input x-model="roleEdit.family" type="text" placeholder="Model family, e.g. anthropic, openai, kiro-auto" maxlength="40" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Model family">
+                        <input x-show="machine.machine || roleEdit.machineModel" x-model="roleEdit.machineModel" type="text" placeholder="机器上的模型，比如 claude-sonnet-4-6" maxlength="120" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="机器上的模型">
+                        <input x-show="machine.machine || roleEdit.machineModel || roleEdit.family" x-model="roleEdit.family" type="text" placeholder="它是哪家的，比如 anthropic、openai" maxlength="40" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="机器上的模型是哪家的">
                         <div class="inline"><span class="spacer"></span>
                           <button class="icon-btn sm" type="button" @click="roleEdit = null" aria-label="不改了" title="不改了"><i class="i i-x" aria-hidden="true"></i></button>
                           <button class="icon-btn sm primary" type="button" :disabled="roleBusy || !roleEdit.name.trim() || !roleEdit.template.trim()" @click="saveRole()" aria-label="存" title="存"><i class="i i-check" aria-hidden="true"></i></button></div>

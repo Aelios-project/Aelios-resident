@@ -1406,7 +1406,7 @@ export class Resident extends Think<Env> {
   }
 
   /** The settings page's roles: saved (added or changed) or removed; the list as it now is. */
-  webSaveRole(input: { name?: unknown; template?: unknown; model?: unknown; family?: unknown }): { roles: Role[] } | { error: string } {
+  webSaveRole(input: { name?: unknown; template?: unknown; model?: unknown; machineModel?: unknown; family?: unknown }): { roles: Role[] } | { error: string } {
     const saved = this.taskRoles().save(input);
     return "error" in saved ? saved : { roles: this.taskRoles().list() };
   }

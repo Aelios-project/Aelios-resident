@@ -4,9 +4,9 @@
 // running turn stops and the words go to the same session). Which helper, which folder and which permissions are the
 // machine's own settings: nothing here can choose them.
 import type { Sql } from "./sticker-store";
-import { MachineJobModels, requestedModelLabel } from "./machine-job-model";
-import type { RoleModel } from "./role-model";
 import { askKindFields, initAskKind, validAskKind, type AskKind } from "./machine-ask-kind";
+import { MachineJobModels, requestedModelLabel } from "./machine-job-model";
+import type { MachinePick } from "./role-model";
 import { progressOf, StepStore, type Step } from "./thread-steps";
 import { ATTACH_MAX_THREAD, type Attachment } from "./attachments";
 import { PermStore, parsePermReport } from "./machine-perms";
@@ -247,7 +247,7 @@ export class MachineStore {
   }
 
   /** Puts a message for a thread in line. Refused when there is no machine, or it is not online right now. */
-  enqueue(task: Task, kind: WorkKind, body: string, files: Attachment[] = [], role: RoleModel | null = null): void {
+  enqueue(task: Task, kind: WorkKind, body: string, files: Attachment[] = [], role: MachinePick | null = null): void {
     // The runner refuses a work with more attachments than this as malformed, so it is never sent.
     if (files.length > ATTACH_MAX_THREAD) fail(400, "TOO_MANY_ATTACHMENTS", `图片和文件一次最多一共 ${ATTACH_MAX_THREAD} 个`);
     this.atomic(() => {
@@ -514,9 +514,12 @@ export class MachineStore {
   }
 }
 
-/** The machine's helper and engine in a few words ("kiro · acpx@0.22.0"), or "" when its runner has not said. */
+/**
+ * The machine's helper and engine in a few words ("kiro · acpx@0.22.0"), or "" when its runner has not said; with the
+ * model the thread's latest job asked for. Kiro always runs on auto, so on Kiro no model is shown.
+ */
 export function machineHelper(machine: { plugin: string; engine: string } | null, model = ""): string {
-  return requestedModelLabel(machine ? [machine.plugin, machine.engine].filter(Boolean).join(" · ") : "", model);
+  return requestedModelLabel(machine ? [machine.plugin, machine.engine].filter(Boolean).join(" · ") : "", machine?.plugin === "kiro" ? "" : model);
 }
 
 /** The note a machine thread's result leaves in the resident's conversation: a record, not a turn (hidden on her page like a task note). */
