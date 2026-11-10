@@ -103,6 +103,7 @@ async function findThreads(host: FindHost, words: string, when: string): Promise
       last: stamp(new Date(thread.updatedAt), host.tz),
       ...(thread.status === "working" ? stepsNote(host, thread.id) : {}),
       asked: thread.asked,
+      ...(thread.progress ? { progress: thread.progress } : {}),
       ...(thread.report ? { report: thread.report } : {}),
       ...(thread.links.length ? { links: thread.links } : {}),
       ...(thread.files.length ? { files: thread.files } : {}),

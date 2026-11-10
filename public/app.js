@@ -230,7 +230,7 @@ function resident() {
   };
   // How a cloud task stands, in words (cloud-tasks.ts TaskStatus).
   // chosen and settled: a task that waited for her and no longer does (stateOf).
-  var TASK_STATUS = { sent: '派出去了', working: '在干活', done: '做完了', failed: '没做成', needs_you: '等你拍板', quiet: '没回音', stopped: '已停下', chosen: '拍板了', settled: '处理过了' };
+  var TASK_STATUS = { sent: '派出去了', working: '在干活', queued: '排队中', done: '做完了', failed: '没做成', needs_you: '等你拍板', quiet: '没回音', stopped: '已停下', chosen: '拍板了', settled: '处理过了' };
   // A tool call in a few words (its name when it is none of these).
   var TOOL_WORDS = {
     memory_recall: '翻了记忆', memory_remember: '记下了', memory_notebook: '翻了小本本', memory_forget: '忘掉了', memory_keep_moment: '存了一刻',
@@ -1414,11 +1414,17 @@ function resident() {
     // How a task stands: one that waited for her and was dealt with (picked, put aside or carried on) asks no more.
     stateOf(task) {
       if (!task) return '';
+      // Sent or taken, but the machine is at work on something else first.
+      if (task.queued && (task.status === 'sent' || task.status === 'working')) return 'queued';
       if (task.status !== 'needs_you' || task.waiting !== false) return task.status;
       return task.chosen ? 'chosen' : 'settled';
     },
     taskPill(status) {
-      return { working: 'warn', sent: 'warn', needs_you: 'hot', done: 'ok', failed: 'bad', quiet: 'bad', chosen: 'ok' }[status] || '';
+      return { working: 'warn', sent: 'warn', queued: 'warn', needs_you: 'hot', done: 'ok', failed: 'bad', quiet: 'bad', chosen: 'ok' }[status] || '';
+    },
+    // A follow-up carries its thread's title: its number says it is not the same task sent twice.
+    taskTitle(task) {
+      return task.nth > 1 ? task.title + ' · 第 ' + task.nth + ' 单' : task.title;
     },
     taskNote(task) {
       if (task.status === 'sent' || task.status === 'working') return task.progress || '派出去了，等它开工';

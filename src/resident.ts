@@ -374,6 +374,8 @@ export type WebThreadLine = {
   sessionUrl?: string;
   /** On a report: the files its task made, to open from right there. */
   files?: ThreadFile[];
+  /** On a report from the machine: what the turn left for them along the way (its NOTE: lines). */
+  note?: string;
 };
 
 /** A thread as the web page opens it. Its lines and files are there for a thread that ran here. */
@@ -2120,7 +2122,8 @@ export class Resident extends Think<Env> {
       status: task.status,
       links: task.links,
       sessionUrl: task.sessionUrl,
-      files: madeBy(task)
+      files: madeBy(task),
+      ...(task.note ? { note: task.note } : {})
     });
     if (this.dynamicAgents.has(TaskWorker, threadName(root))) {
       const child = await this.dynamicAgents.get(TaskWorker, threadName(root));

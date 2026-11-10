@@ -55,7 +55,7 @@ assert.equal(page.openBusy[line.id], false);
 assert.deepEqual(copy(page.bubblesOf(line)), [{ text: '答复<script>unsafe</script>', first: true, last: true }]);
 assert.equal(page.bubblesOf({ ...line, text: '一\n\n二' }).length, 2, 'a blank line starts a new bubble, as on Telegram');
 const markup = html.slice(html.indexOf('<template x-for="row in rows()"'), html.indexOf('<footer class="compose"'));
-for (const binding of ['x-markdown="b.text"', 'x-text="busyOf(row.line).label"', 'x-text="item.what"', 'x-text="item.detail"', 'x-text="part.text"', 'x-text="p.title"', 'x-text="task.title"', 'x-text="taskPreview(task)"', 'x-text="row.line.text"']) {
+for (const binding of ['x-markdown="b.text"', 'x-text="busyOf(row.line).label"', 'x-text="item.what"', 'x-text="item.detail"', 'x-text="part.text"', 'x-text="p.title"', 'x-text="taskTitle(task)"', 'x-text="taskPreview(task)"', 'x-text="row.line.text"']) {
   assert.ok(markup.includes(binding), binding + ' is bound as text');
 }
 console.log('PASS thoughts and tools fold into one line under the reply, counted per call, kept whole and bound as text');
@@ -1109,6 +1109,14 @@ assert.deepEqual(copy(asideCalls), [['/web/task/settle', { id: 't_0123456789' }]
 assert.deepEqual(aside.lines.map((line) => line.tasks[0].waiting), [false, false], 'both cards of it stop asking');
 assert.equal(aside.taskStatusText(aside.stateOf(aside.lines[1].tasks[0])), '处理过了');
 assert.equal(aside.taskStatusText(aside.stateOf({ ...waitingCard(), waiting: false, chosen: '好' })), '拍板了');
+// Work that waits for the machine says so; a follow-up shows its number; a turn's notes are bound as text.
+assert.equal(aside.taskStatusText(aside.stateOf({ status: 'sent', queued: true })), '排队中');
+assert.equal(aside.stateOf({ status: 'done', queued: true }), 'done', 'a finished task is not queued');
+assert.equal(aside.taskPill(aside.stateOf({ status: 'working', queued: true })), 'warn');
+assert.equal(aside.taskTitle({ title: '查配置', nth: 1 }), '查配置');
+assert.equal(aside.taskTitle({ title: '查配置' }), '查配置', 'an older card without nth');
+assert.equal(aside.taskTitle({ title: '查配置', nth: 2 }), '查配置 · 第 2 单');
+assert.ok(html.includes('<span x-text="line.note"></span>'), 'the notes a turn left are bound as text');
 await aside.settle(aside.lines[0].tasks[0]);
 assert.equal(asideCalls.length, 1, 'not twice');
 aside.lines = [{ id: 'a3', role: 'assistant', kind: 'chat', text: 'x', tasks: [waitingCard()] }];

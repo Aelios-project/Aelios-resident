@@ -70,6 +70,8 @@ async function settled() {
   for (;;) { const now = await assistantLines(); if (now === last) return; last = now; await sleep(1500); }
 }
 let runner;
+/** The thread sent while the slow turn runs, which the permission step answers. */
+let held;
 
 try {
   await step("turned on and paired with a one-time code from the settings page; offline until the runner starts", async () => {
@@ -165,6 +167,8 @@ try {
     const waitingList = async () => (await web("/web/waiting")).data;
     const noted = await send("机器派活 NOTEME 看看");
     await until(async () => (await threadOf(noted.id)).status === "done", "the note job done");
+    const report = (await threadOf(noted.id)).lines.find((line) => line.role === "result");
+    assert.equal(report.note, "found two config files", "the note shows under the report on the thread's page");
     await settled();
     // News is not on the list: it is an unread count on the thread, and opening the thread clears it (done + note = 2).
     assert.deepEqual((await waitingList()).items.filter((i) => i.thread === noted.id), []);
@@ -198,9 +202,15 @@ try {
     const shown = await until(async () => { const v = await threadOf(slow.id); return v.steps?.length && v; }, "steps on the thread page");
     assert.equal(shown.steps.at(-1).title, "read look around");
     assert.equal((await web("/web/threads")).data.threads.find((t) => t.id === slow.id).steps.at(-1).title, "read look around");
+    // Work sent while that turn runs waits in line, and says so, until the machine takes it up (the next step answers it:
+    // a day has ten tasks at most, so it is not a task of its own).
+    held = await send("机器派活 PERM:execute 跑一下");
+    assert.equal(held.queued, true, "the thread's row says it waits in line");
+    assert.equal((await threadOf(held.id)).tasks[0].queued, true);
     const stop = await web("/web/thread/stop", { id: slow.id });
     assert.equal(stop.status, 200, JSON.stringify(stop.data));
     const stopped = await until(async () => { const v = await threadOf(slow.id); return v.status === "stopped" && v; }, "stopped");
+    await until(async () => (await threadOf(held.id)).tasks[0].queued === false, "the one behind taken up");
     assert.deepEqual(stopped.tasks.map((task) => task.status), ["stopped"]);
     assert.equal(stopped.steps, undefined, "no steps once it has stopped");
     assert.ok(!(await web("/web/waiting")).data.items.some((i) => i.thread === slow.id));
@@ -215,7 +225,6 @@ try {
 
   await step("a permission the machine holds is on the waiting list with Allow / Deny; the button resolves it and clears the item", async () => {
     const waitingList = async () => (await web("/web/waiting")).data;
-    const held = await send("机器派活 PERM:execute 跑一下");
     const item = await until(async () => (await waitingList()).items.find((i) => i.thread === held.id && i.kind === "permission"), "the permission in the list");
     assert.match(item.perm, /^p_[0-9a-f]{10}$/);
     assert.ok(item.line && item.title);
