@@ -1498,7 +1498,7 @@ if (phase === "tasks" || phase === "tasks-quiet" || phase === "tasks-roles") {
       assert.deepEqual([shown.on, shown.configured], [true, true]);
       assert.equal(shown.origin, WORKER);
       assert.equal(shown.prompt, undefined);
-      assert.deepEqual([shown.today, shown.limit, shown.tasks.length], [0, 10, 0]);
+      assert.deepEqual([shown.today, shown.tasks.length], [0, 0]);
       assert.equal((await fetch(`${WORKER}/web/tasks`)).status, 401, "not without the web key");
     });
 

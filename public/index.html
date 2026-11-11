@@ -1176,7 +1176,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
             </template>
             <template x-if="cloud.tasks.length">
               <div class="section">
-                <div class="label"><span>最近的活</span><span class="spacer"></span><span class="pill" x-text="'24 小时内 ' + cloud.today + ' / ' + cloud.limit + ' 单'"></span></div>
+                <div class="label"><span>最近的活</span><span class="spacer"></span><span class="pill" x-text="'24 小时内 ' + cloud.today + ' 单'"></span></div>
                 <template x-for="task in cloud.tasks" :key="task.id">
                   <div class="mini-row">
                     <div class="top-line"><span class="t" x-text="taskTitle(task)"></span><span class="pill" :class="taskPill(stateOf(task))" x-text="taskStatusText(stateOf(task), task.runs)"></span></div>

@@ -123,7 +123,6 @@ import {
   LOCAL_TASK_OUTPUT,
   LOCAL_QUIET_MINUTES,
   QUIET_MINUTES,
-  TASKS_PER_DAY,
   TASKS_PER_TURN,
   TaskStore,
   localBrief,
@@ -1629,7 +1628,6 @@ export class Resident extends Think<Env> {
     const unasked = follows !== null && reported !== null && this.cloudTasks().get(reported)?.root === follows.root && carriesOnUnasked(follows);
     if (!id || this.#letterPromptId || !(this.#theirTurns.has(id) || unasked)) return "Not sent: a task is sent only when they ask for it in a message of theirs.";
     if ((this.#turnTasks.get(id) ?? 0) >= TASKS_PER_TURN) return `Not sent: at most ${TASKS_PER_TURN} tasks per reply.`;
-    if (this.cloudTasks().sentToday() >= TASKS_PER_DAY) return `Not sent: ${TASKS_PER_DAY} tasks have gone out in the last 24 hours, which is the most there can be. Tell them.`;
     return null;
   }
 
@@ -2049,7 +2047,6 @@ export class Resident extends Think<Env> {
     origin: string;
     github: { on: boolean; repo: string; url: string; problem: string; tokenPage: string };
     today: number;
-    limit: number;
     tasks: TaskCard[];
     open: number;
     roles: Role[];
@@ -2071,7 +2068,6 @@ export class Resident extends Think<Env> {
       github: { on: Boolean(token), repo: current ? `${current.owner}/${current.repo}` : "", url: current?.url ?? "", problem, tokenPage: TOKEN_PAGE },
       origin: own,
       today: this.cloudTasks().sentToday(),
-      limit: TASKS_PER_DAY,
       tasks: this.cloudTasks().recent(10).map((task) => this.cloudTasks().card(task)),
       // Threads at work or waiting for her, as 线程 lists them (tests are not threads): the count on its button.
       open: this.cloudTasks()
@@ -2086,7 +2082,6 @@ export class Resident extends Think<Env> {
   /** The settings page's 试一下: a small task that only reports back, on GitHub Actions if that is set up. */
   async webTestTask(origin: string, place?: TaskExecution): Promise<Awaited<ReturnType<Resident["webTasks"]>> | { error: string }> {
     await this.noteOrigin(origin);
-    if (this.cloudTasks().sentToday() >= TASKS_PER_DAY) return { error: `24 小时内已经派了 ${TASKS_PER_DAY} 单，明天再试` };
     const job =
       'This is a test from the resident\'s settings page, to see that a thread starts and can report back. Do nothing else: send the progress line "收到了", then report the result with status done and the summary "接通了".';
     const routes = this.taskRoutes();

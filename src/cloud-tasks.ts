@@ -15,9 +15,7 @@
 import { NOTE_PREFIX, SKIP } from "./prompts";
 import type { Sql } from "./sticker-store";
 
-// What the resident sends out by itself in a day. An
-// Actions run takes minutes of theirs: a few a day is plenty. What they write to a thread themselves is not counted.
-export const TASKS_PER_DAY = 10;
+// What the resident sends out by itself in one reply. There is no daily limit: tasks go out only when the user asks.
 export const TASKS_PER_TURN = 3;
 // A thread they asked for may be carried on this many times in a row without them asking again, each time in the turn
 // its report came back in (to fix or finish the same thing). Past that, it waits for them.
