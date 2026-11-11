@@ -673,6 +673,7 @@ function resident() {
       picLoading = {};
       this.identity = known ? { name: known.name, avatar: known.avatar } : { name: '住户', avatar: null };
       this.lines = [];
+      if (this.syncChatPermissions) this.syncChatPermissions(null);
       this.outbox = [];
       this.loaded = false;
       this.unseen = 0;
@@ -769,6 +770,7 @@ function resident() {
       this.authed = false;
       this.loaded = false;
       this.lines = [];
+      if (this.syncChatPermissions) this.syncChatPermissions(null);
       this.outbox = [];
       this.view = 'chat';
       this.personaLoaded = false;
@@ -812,6 +814,7 @@ function resident() {
         out.push({ key: line.id, type: 'line', line: line, cards: cards });
       });
       this.outbox.forEach(function (item) { out.push({ key: item.tid, type: 'local', item: item }); });
+      if (this.chatPermissionRows) out = out.concat(this.chatPermissionRows());
       if (this.waiting()) out.push({ key: 'typing', type: 'typing' });
       return out;
     },
@@ -996,6 +999,7 @@ function resident() {
     },
     // What /web/messages gave: the lines, or null when nothing has changed since the version the page has.
     took(data) {
+      if (this.syncChatPermissions) this.syncChatPermissions(data);
       if (data && data.rev) seenRev = data.rev;
       if (data && data.same) return null;
       fullAt = Date.now();
@@ -3113,5 +3117,5 @@ function resident() {
       this.toast = message;
       setTimeout(function () { if (self.toast === message) self.toast = ''; }, 2400);
     }
-  }, typeof groupPage === 'function' ? groupPage() : {}, typeof machinePage === 'function' ? machinePage() : {}, typeof boxesPage === 'function' ? boxesPage() : {}, typeof attachPage === 'function' ? attachPage() : {}, typeof waitingPage === 'function' ? waitingPage() : {}, typeof progressPage === 'function' ? progressPage() : {}, typeof recommendedRolesPage === 'function' ? recommendedRolesPage() : {});
+  }, typeof groupPage === 'function' ? groupPage() : {}, typeof machinePage === 'function' ? machinePage() : {}, typeof boxesPage === 'function' ? boxesPage() : {}, typeof attachPage === 'function' ? attachPage() : {}, typeof waitingPage === 'function' ? waitingPage() : {}, typeof chatPermissionsPage === 'function' ? chatPermissionsPage() : {}, typeof progressPage === 'function' ? progressPage() : {}, typeof recommendedRolesPage === 'function' ? recommendedRolesPage() : {});
 }

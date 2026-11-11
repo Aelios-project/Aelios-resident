@@ -145,6 +145,7 @@ import {
   type ThreadCard
 } from "./cloud-tasks";
 import { WaitingStore } from "./waiting-store";
+import { chatPermissions } from "./chat-permissions";
 import { carryOver, markTakenOver, stillTakeable, unfinishedWithTitle } from "./takeover";
 import { MachineError, MachineStore, machineHelper, machineRecord, machineReply, type Ask, type Finished, type WorkKind } from "./machine";
 import { wakesResident } from "./machine-wake";
@@ -1456,6 +1457,7 @@ export class Resident extends Think<Env> {
       else await this.machineNote(finished.task.id);
       await this.pushWaitingAsks();
     }
+    if (action === "permission" && answer.status === 200) await this.pushWaitingAsks();
     return answer;
   }
 
@@ -4282,13 +4284,14 @@ export class Resident extends Think<Env> {
    * The web page's look at the conversation: all of it with its version, or `same` when it has that version and no
    * reply is being written (a draft changes with every word, so then it is read in full).
    */
-  async webLook(since: string | null): Promise<{ data: WebLine[]; rev: string } | { same: true; rev: string }> {
+  async webLook(since: string | null): Promise<({ data: WebLine[]; rev: string } | { same: true; rev: string }) & { permissions: ReturnType<typeof chatPermissions> }> {
+    const permissions = chatPermissions(this.waiting().list().items);
     const rev = this.webRevision();
     if (since && since === rev && !this.#drafts.size) {
       this.#webSeenAt = Date.now();
-      return { same: true, rev };
+      return { same: true, rev, permissions };
     }
-    return { data: await this.webHistory(), rev };
+    return { data: await this.webHistory(), rev, permissions };
   }
 
   /** An answer picked on a thread's card that waits for their decision: to the thread, or else to the resident. */
