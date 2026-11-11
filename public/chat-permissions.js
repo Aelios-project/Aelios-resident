@@ -12,7 +12,7 @@ function chatPermissionsPage() {
     },
     async answerChatPermission(item, allow) {
       if (item.perm) await this.waitingPermission(item, allow);
-      else await this.waitingAnswer(item, allow ? 'Allow' : 'Deny');
+      else await this.waitingAnswer(item, allow ? '允许' : '拒绝');
       await this.refresh(true);
     }
   };

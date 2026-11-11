@@ -201,13 +201,13 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
             </div>
           </template>
           <template x-if="row.type === 'permission'">
-            <div class="ccard chat-permission" role="group" aria-label="Pending permission">
+            <div class="ccard chat-permission" role="group" aria-label="等你批准">
               <div class="t" x-text="row.permission.title"></div>
               <div class="note" x-text="row.permission.line"></div>
               <pre style="white-space: pre-wrap; overflow-wrap: anywhere" x-text="row.permission.detail"></pre>
               <div class="acts">
-                <button type="button" @click="answerChatPermission(row.permission, true)" :disabled="Boolean(choosing)">Allow</button>
-                <button type="button" @click="answerChatPermission(row.permission, false)" :disabled="Boolean(choosing)">Deny</button>
+                <button type="button" @click="answerChatPermission(row.permission, true)" :disabled="Boolean(choosing)">允许</button>
+                <button type="button" @click="answerChatPermission(row.permission, false)" :disabled="Boolean(choosing)">拒绝</button>
               </div>
             </div>
           </template>

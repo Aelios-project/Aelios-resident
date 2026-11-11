@@ -91,7 +91,7 @@ await test('typed receipt approvals appear in chat and route both decisions to t
     p.refresh = async () => p.took({ same: true, permissions: [] });
     await p.answerChatPermission(approval, allow);
     assert.equal(calls[0][0], '/web/task/choose');
-    assert.deepEqual(JSON.parse(JSON.stringify(calls[0][1].body)), { id: 'original-task', text: allow ? 'Allow' : 'Deny' });
+    assert.deepEqual(JSON.parse(JSON.stringify(calls[0][1].body)), { id: 'original-task', text: allow ? '允许' : '拒绝' });
     assert.equal(p.chatPermissions.length, 0);
   }
 });
