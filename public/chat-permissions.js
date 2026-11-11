@@ -8,10 +8,11 @@ function chatPermissionsPage() {
       if (!data) this.waitList = { items: [], open: 0, unread: {} };
     },
     chatPermissionRows() {
-      return this.chatPermissions.map(function (item) { return { key: 'permission_' + item.perm, type: 'permission', permission: item }; });
+      return this.chatPermissions.map(function (item) { return { key: 'permission_' + (item.perm || item.id), type: 'permission', permission: item }; });
     },
     async answerChatPermission(item, allow) {
-      await this.waitingPermission(item, allow);
+      if (item.perm) await this.waitingPermission(item, allow);
+      else await this.waitingAnswer(item, allow ? 'Allow' : 'Deny');
       await this.refresh(true);
     }
   };

@@ -80,6 +80,22 @@ await test('same-version polling synchronizes cards and clears decisions made el
   assert.equal(p.waitList.items.length, 1, 'a remaining question survives the permission closure');
   assert.equal(p.waitList.items[0].id, question.id);
 });
+await test('typed receipt approvals appear in chat and route both decisions to the original task', async () => {
+  const approval = { id: 't:ask:a', kind: 'ask', askKind: 'permission', task: 'original-task', options: [] };
+  assert.equal(chatPermissions([approval, { ...approval, askKind: 'question' }]).length, 1);
+  for (const allow of [true, false]) {
+    const p = page();
+    p.syncChatPermissions({ permissions: [approval] });
+    const calls = [];
+    p.api = async (route, options) => { calls.push([route, options]); return { items: [], open: 0, unread: {} }; };
+    p.refresh = async () => p.took({ same: true, permissions: [] });
+    await p.answerChatPermission(approval, allow);
+    assert.equal(calls[0][0], '/web/task/choose');
+    assert.deepEqual(JSON.parse(JSON.stringify(calls[0][1].body)), { id: 'original-task', text: allow ? 'Allow' : 'Deny' });
+    assert.equal(p.chatPermissions.length, 0);
+  }
+});
+
 await test('chat Allow and Deny use the shared authenticated endpoint and refresh both projections', async () => {
   for (const allow of [true, false]) {
     const p = page();

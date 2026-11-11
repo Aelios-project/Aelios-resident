@@ -4,7 +4,9 @@ The main chat shows live machine permission requests as compact cards with the t
 
 `GET /web/messages` includes a `permissions` array on both full and incremental responses. Each entry is the same `WaitingItem` with `kind: "permission"` and a `perm` identifier that `/web/waiting` returns. The response also carries the authoritative `waiting` snapshot, so resolving a permission preserves any remaining question on the same thread. Polling updates both projections even when the conversation itself has not changed. The page clears it when changing residents or logging out.
 
-Both views answer through the existing authenticated endpoint:
+Receipt asks with `askKind: "permission"` also appear in chat. These have no live permission handle: their Allow / Deny answers use `/web/task/choose` with the original task ID and the text `Allow` or `Deny`.
+
+Both views answer live permission requests through the existing authenticated endpoint:
 
 ```http
 POST /web/waiting/permission
