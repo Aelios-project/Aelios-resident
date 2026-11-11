@@ -4284,14 +4284,15 @@ export class Resident extends Think<Env> {
    * The web page's look at the conversation: all of it with its version, or `same` when it has that version and no
    * reply is being written (a draft changes with every word, so then it is read in full).
    */
-  async webLook(since: string | null): Promise<({ data: WebLine[]; rev: string } | { same: true; rev: string }) & { permissions: ReturnType<typeof chatPermissions> }> {
-    const permissions = chatPermissions(this.waiting().list().items);
+  async webLook(since: string | null): Promise<({ data: WebLine[]; rev: string } | { same: true; rev: string }) & { permissions: ReturnType<typeof chatPermissions>; waiting: ReturnType<WaitingStore["list"]> }> {
+    const waiting = this.waiting().list();
+    const permissions = chatPermissions(waiting.items);
     const rev = this.webRevision();
     if (since && since === rev && !this.#drafts.size) {
       this.#webSeenAt = Date.now();
-      return { same: true, rev, permissions };
+      return { same: true, rev, permissions, waiting };
     }
-    return { data: await this.webHistory(), rev, permissions };
+    return { data: await this.webHistory(), rev, permissions, waiting };
   }
 
   /** An answer picked on a thread's card that waits for their decision: to the thread, or else to the resident. */

@@ -2,7 +2,7 @@
 
 The main chat shows live machine permission requests as compact cards with the thread title, request title, redacted command, and Allow / Deny buttons. Cards are a projection of the Waiting list, not persisted conversation messages.
 
-`GET /web/messages` includes a `permissions` array on both full and incremental responses. Each entry is the same `WaitingItem` with `kind: "permission"` and a `perm` identifier that `/web/waiting` returns. Polling updates this projection even when the conversation itself has not changed. The page clears it when changing residents or logging out.
+`GET /web/messages` includes a `permissions` array on both full and incremental responses. Each entry is the same `WaitingItem` with `kind: "permission"` and a `perm` identifier that `/web/waiting` returns. The response also carries the authoritative `waiting` snapshot, so resolving a permission preserves any remaining question on the same thread. Polling updates both projections even when the conversation itself has not changed. The page clears it when changing residents or logging out.
 
 Both views answer through the existing authenticated endpoint:
 

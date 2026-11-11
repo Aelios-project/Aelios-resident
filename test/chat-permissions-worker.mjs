@@ -18,6 +18,7 @@ async function hold(id) { await call('/runner/v1/permission', { ...report, id },
 await hold('p_0123456789');
 let messages = await call('/web/messages');
 assert.equal(messages.permissions.length, 1);
+assert.deepEqual(messages.waiting, await call('/web/waiting'), 'chat polling carries the authoritative Waiting snapshot');
 assert.equal(messages.permissions[0].detail, 'example --check');
 assert.deepEqual(messages.permissions, (await call('/web/waiting')).items.filter((item) => item.kind === 'permission'));
 const repeat = await call('/web/messages?since=' + encodeURIComponent(messages.rev));

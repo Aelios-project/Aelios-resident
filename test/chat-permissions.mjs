@@ -74,9 +74,11 @@ await test('same-version polling synchronizes cards and clears decisions made el
   const p = page();
   p.took({ same: true, rev: '1', permissions: [item] });
   assert.equal(p.rows().filter((row) => row.type === 'permission').length, 1);
-  p.took({ same: true, rev: '1', permissions: [] });
+  const question = { id: 't:ask:q', kind: 'ask', askKind: 'question', thread: 't', options: ['A'] };
+  p.took({ same: true, rev: '1', permissions: [], waiting: { items: [question], open: 1, unread: {} } });
   assert.equal(p.rows().filter((row) => row.type === 'permission').length, 0);
-  assert.equal(p.waitList.items.length, 0);
+  assert.equal(p.waitList.items.length, 1, 'a remaining question survives the permission closure');
+  assert.equal(p.waitList.items[0].id, question.id);
 });
 await test('chat Allow and Deny use the shared authenticated endpoint and refresh both projections', async () => {
   for (const allow of [true, false]) {
