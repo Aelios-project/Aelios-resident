@@ -436,7 +436,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
         <div class="rec" role="status"><span class="red" aria-hidden="true"></span><span>在录</span><span class="len" x-text="Math.floor(recording.seconds) + ' 秒'"></span><span class="spacer"></span>
           <button class="icon-btn sm" type="button" @click="stopRecord(false)" title="取消" aria-label="取消"><i class="i i-x" aria-hidden="true"></i></button></div>
       </template>
-      <button class="round stop-reply" type="button" x-cloak x-show="chatTurn" @click="stopReply()" :disabled="stopReplyBusy || (chatTurn && chatTurn.stopping)" :aria-label="chatTurn && chatTurn.stopping ? 'Stopping reply' : 'Stop reply'" :title="chatTurn && chatTurn.stopping ? 'Stopping reply' : 'Stop reply'">
+      <button class="round stop-reply" type="button" x-cloak x-show="chatTurn" @click="stopReply()" :disabled="stopReplyBusy || (chatTurn && chatTurn.stopping)" :aria-label="chatTurn && chatTurn.stopping ? '正在停下' : '停下这次回复'" :title="chatTurn && chatTurn.stopping ? '正在停下' : '停下这次回复'">
         <span class="stop-mark" aria-hidden="true"></span>
       </button>
       <button class="round go" type="button" x-show="canSend() || recording" @click="recording ? stopRecord(true) : sendDraft()" :aria-label="recording ? '发出这段语音' : '发送'">

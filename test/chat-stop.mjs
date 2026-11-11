@@ -126,5 +126,5 @@ test('stop button is accessible and loaded independently from the large page mod
   assert.ok(html.includes('<script src="/chat-stop.js"></script>'));
   assert.ok(html.includes('<link rel="stylesheet" href="/chat-stop.css">'));
   assert.match(html, /x-show="chatTurn"[^>]*@click="stopReply\(\)"/);
-  assert.match(html, /aria-label="chatTurn[^\n]+Stop reply/);
+  assert.match(html, /aria-label="chatTurn[^\n]+停下这次回复/);
 });

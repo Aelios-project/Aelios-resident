@@ -850,7 +850,7 @@ function resident() {
       }
       try {
         var result = await this.api('/web/take-back', { method: 'POST', body: { id: line.id, again: again } });
-        if (again && result.status !== 'completed' && result.status !== 'aborted') throw new Error('The reply did not complete (' + result.status + '). Try again.');
+        if (again && result.status !== 'completed' && result.status !== 'aborted') throw new Error('没回出来（' + result.status + '），再点一次试试');
       } catch (error) {
         this.notify(error.message);
       } finally {
