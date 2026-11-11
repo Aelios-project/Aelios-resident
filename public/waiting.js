@@ -5,7 +5,10 @@ function waitingPage() {
   return {
     waitList: { items: [], open: 0, unread: {} },
     async loadWaiting() {
-      try { this.waitList = await this.api('/web/waiting'); } catch (error) { /* the threads below still work */ }
+      try { this.waitList = await this.api('/web/waiting'); this.syncWaitingChat(); } catch (error) { /* the threads below still work */ }
+    },
+    syncWaitingChat() {
+      if (this.syncChatPermissions) this.syncChatPermissions({ permissions: this.waitList.items.filter(function (entry) { return (entry.kind === 'permission' && entry.perm) || (entry.kind === 'ask' && entry.askKind === 'permission'); }) });
     },
     waitingKind(item) {
       // A thread waiting more than one way says both (src/waiting-merge.ts), a permission first.
@@ -40,7 +43,7 @@ function waitingPage() {
       this.choosing = item.id;
       try { this.waitList = await this.api('/web/waiting/permission', { method: 'POST', body: { id: item.perm, allow: allow } }); }
       catch (error) { this.notify(error.message); await this.loadWaiting(); }
-      if (this.syncChatPermissions) this.syncChatPermissions({ permissions: this.waitList.items.filter(function (entry) { return entry.kind === 'permission' && entry.perm; }) });
+      this.syncWaitingChat();
       this.choosing = '';
     },
     // Opening a thread reads its news.
