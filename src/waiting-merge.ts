@@ -38,7 +38,7 @@ export function mergeByThread(items: WaitingItem[]): MergedItem[] {
   for (const source of items) {
     // The stored sentence may be the old tier refusal; the card shows what it means today.
     const item: MergedItem = { ...source, line: currentWording(source.line),
-      ...(source.kind === "ask" && source.askKind === "permission" ? { options: ["Allow", "Deny"] } : {}) };
+      ...(source.kind === "ask" && source.askKind === "permission" ? { options: ["允许", "拒绝"] } : {}) };
     const list = byThread.get(item.thread) ?? [];
     list.push({ ...item, reason: reasonOf(item) });
     byThread.set(item.thread, list);

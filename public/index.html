@@ -751,8 +751,8 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
             <span class="sub" x-show="item.detail"><span class="what more" x-text="item.detail"></span></span>
             <span class="links">
               <template x-if="item.perm"><span class="links">
-                <button class="btn small primary" type="button" :disabled="Boolean(choosing)" @click="waitingPermission(item, true)">Allow</button>
-                <button class="btn small" type="button" :disabled="Boolean(choosing)" @click="waitingPermission(item, false)">Deny</button>
+                <button class="btn small primary" type="button" :disabled="Boolean(choosing)" @click="waitingPermission(item, true)">允许</button>
+                <button class="btn small" type="button" :disabled="Boolean(choosing)" @click="waitingPermission(item, false)">拒绝</button>
               </span></template>
               <template x-for="(option, i) in item.options" :key="option">
                 <button class="btn small" :class="i === 0 && 'primary'" type="button" :disabled="Boolean(choosing)" @click="waitingAnswer(item, option)" x-text="option"></button>
@@ -773,7 +773,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
         <span class="sub"><span x-text="runsText(item.runs) + ' · ' + item.tasks + ' 单'"></span><span x-text="fmt(item.updatedAt)"></span></span>
       </button>
     </template>
-    <p class="group-title" x-show="waitingThreads('done').length">&#20570;&#23436;&#30340;</p>
+    <p class="group-title" x-show="waitingThreads('done').length">做完的</p>
     <div class="list" x-show="waitingThreads('done').length">
       <template x-for="item in waitingThreads('done')" :key="item.id">
         <button class="li" type="button" @click="openThread(item.id)" title="打开线程">

@@ -49,7 +49,7 @@ await test("a typed approval with no handle routes its options through the task,
   ]);
   assert.equal(card.perm, undefined, "there is no live request to answer");
   assert.deepEqual(card.reasons, ["permission", "question"]);
-  assert.deepEqual(card.options, ["Allow", "Deny"], "approval buttons remain available without a live handle");
+  assert.deepEqual(card.options, ["允许", "拒绝"], "approval buttons remain available without a live handle");
   assert.equal(card.task, "approval-task", "the decision goes to the approval task");
 });
 
