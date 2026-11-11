@@ -319,6 +319,8 @@ async function handleWeb(request: Request, env: Env, url: URL, at: At): Promise<
           execution?: string;
           template?: string;
           model?: string;
+          machineModel?: unknown;
+          family?: unknown;
           label?: string;
           runnerId?: string;
           plug?: string;
@@ -511,7 +513,7 @@ async function handleWeb(request: Request, env: Env, url: URL, at: At): Promise<
       return Response.json(tried, { status: "error" in tried ? 400 : 200 });
     }
     case "POST /web/tasks/roles": {
-      const saved = await agent.webSaveRole({ name: body.name, template: body.template, model: body.model });
+      const saved = await agent.webSaveRole({ name: body.name, template: body.template, model: body.model, machineModel: body.machineModel, family: body.family });
       return Response.json(saved, { status: "error" in saved ? 400 : 200 });
     }
     case "POST /web/tasks/roles/remove":

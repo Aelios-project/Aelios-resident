@@ -3,6 +3,7 @@
 // changed, removed and added to, each with the model its threads use. A role is how to do a kind of work, not a
 // person: no name, no persona.
 import type { Sql } from "./sticker-store";
+import { initRoleMachine, roleWithMachine, validFamily } from "./role-model";
 
 export const ROLE_NAME = /^[a-z][a-z0-9-]{0,23}$/;
 const TEMPLATE_MAX = 1500;
@@ -63,44 +64,54 @@ const EARLIER_TEMPLATES: Record<string, readonly string[]> = {
   researcher: ["调研、写文档。每条结论附出处链接，没把握的标「不确定」。交回来写：结论、出处、还没查清的。"]
 };
 
-export type Role = { name: string; template: string; model: string };
+/** `model` is what the resident's own threads call; `machineModel` and `family` are what a machine's helper is asked for (role-model.ts). */
+export type Role = { name: string; template: string; model: string; machineModel?: string; family?: string };
 
 export class RoleStore {
   constructor(private readonly sql: Sql) {
     // The three that come with it are put in once, when the table is made; after that the list is theirs.
     const [made] = sql<{ name: string }>`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'res_task_roles'`;
     if (made) {
+      initRoleMachine(sql);
       for (const role of DEFAULT_ROLES) {
         for (const old of EARLIER_TEMPLATES[role.name] ?? []) sql`UPDATE res_task_roles SET template = ${role.template} WHERE name = ${role.name} AND template = ${old}`;
       }
       return;
     }
     sql`CREATE TABLE res_task_roles (name TEXT PRIMARY KEY, template TEXT NOT NULL, model TEXT NOT NULL, at INTEGER NOT NULL)`;
+    initRoleMachine(sql);
     DEFAULT_ROLES.forEach((role, i) => sql`INSERT INTO res_task_roles (name, template, model, at) VALUES (${role.name}, ${role.template}, ${role.model}, ${i})`);
   }
 
   list(): Role[] {
-    return this.sql<Role>`SELECT name, template, model FROM res_task_roles ORDER BY at, name`;
+    return this.sql<Role>`SELECT name, template, model, machine_model AS machineModel, family FROM res_task_roles ORDER BY at, name`.map(roleWithMachine);
   }
 
   get(name: string): Role | null {
-    const [row] = this.sql<Role>`SELECT name, template, model FROM res_task_roles WHERE name = ${name}`;
-    return row ?? null;
+    const [row] = this.sql<Role>`SELECT name, template, model, machine_model AS machineModel, family FROM res_task_roles WHERE name = ${name}`;
+    return row ? roleWithMachine(row) : null;
   }
 
   /** Adds a role or changes one; why not, when it cannot be saved. */
-  save(input: { name?: unknown; template?: unknown; model?: unknown }): Role | { error: string } {
+  save(input: { name?: unknown; template?: unknown; model?: unknown; machineModel?: unknown; family?: unknown }): Role | { error: string } {
     const name = String(input.name ?? "").trim().toLowerCase();
     const template = String(input.template ?? "").trim();
     const model = String(input.model ?? "").trim();
+    const old = this.get(name);
+    // A page from before the machine fields sends neither: the card keeps what it had. A new machine model without a
+    // family drops the old family, which was about the other model.
+    const machineModel = input.machineModel === undefined ? old?.machineModel ?? "" : String(input.machineModel ?? "").trim();
+    const family = input.family === undefined ? ((old?.machineModel ?? "") === machineModel ? old?.family ?? "" : "") : typeof input.family === "string" ? input.family.trim() : input.family;
     if (!ROLE_NAME.test(name)) return { error: "名字用小写英文字母开头，只用小写字母、数字和 -，最多 24 个" };
     if (!template) return { error: "写一下这个角色怎么干活" };
     if (template.length > TEMPLATE_MAX) return { error: `最多 ${TEMPLATE_MAX} 个字` };
     if (model.length > MODEL_MAX || /\s/.test(model)) return { error: "模型写成一个 id，比如 anthropic/claude-haiku-5.5" };
-    if (!this.get(name) && this.list().length >= ROLES_MAX) return { error: `最多 ${ROLES_MAX} 个角色` };
-    this.sql`INSERT INTO res_task_roles (name, template, model, at) VALUES (${name}, ${template}, ${model}, ${Date.now()})
-      ON CONFLICT (name) DO UPDATE SET template = excluded.template, model = excluded.model`;
-    return { name, template, model };
+    if (machineModel.length > MODEL_MAX || /\s/.test(machineModel)) return { error: "机器上的模型写成帮手认的一个 id，比如 claude-sonnet-4-6" };
+    if (!validFamily(family)) return { error: "家族用小写英文字母开头，只用小写字母、数字和 -，最多 40 个，比如 anthropic" };
+    if (!old && this.list().length >= ROLES_MAX) return { error: `最多 ${ROLES_MAX} 个角色` };
+    this.sql`INSERT INTO res_task_roles (name, template, model, machine_model, family, at) VALUES (${name}, ${template}, ${model}, ${machineModel}, ${family}, ${Date.now()})
+      ON CONFLICT (name) DO UPDATE SET template = excluded.template, model = excluded.model, machine_model = excluded.machine_model, family = excluded.family`;
+    return roleWithMachine({ name, template, model, machineModel, family });
   }
 
   remove(name: string): void {

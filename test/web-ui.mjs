@@ -333,9 +333,12 @@ assert.ok(picks.includes('@cf/zai-org/glm-4.7-flash') && picks.at(-1) === 'opena
 assert.equal(new Set(picks).size, picks.length, 'each once');
 page.editRole({ name: 'coder', template: '改代码。', model: 'custom/my-model' });
 assert.deepEqual([page.roleEdit.fresh, page.roleEdit.pick, page.roleEdit.own], [false, 'custom/my-model', '']);
+page.editRole({ name: 'rev', template: 'x', model: 'anthropic/claude-sonnet-5.5', machineModel: 'claude-sonnet-4-6', family: 'anthropic' });
+assert.deepEqual([page.roleEdit.pick, page.roleEdit.machineModel, page.roleEdit.family], ['anthropic/claude-sonnet-5.5', 'claude-sonnet-4-6', 'anthropic'], 'the machine model is its own field, next to the threads\' model');
 page.editRole({ name: 'odd', template: 'x', model: 'someone/unlisted' });
 assert.deepEqual([page.roleEdit.pick, page.roleEdit.own], ['…', 'someone/unlisted'], 'a model not in the list is shown written in');
 assert.equal(page.roleModelText({ model: '' }), '线程的模型');
+assert.ok(html.includes('x-show="machine.machine || roleEdit.machineModel" x-model="roleEdit.machineModel"'), 'the machine model is asked for only with a machine paired, or when the card already has one');
 page.cloud = { ...page.cloud, roles: [{ name: 'coder', template: '改代码。', model: '' }] };
 const roleCalls = [];
 page.api = async (path, options) => {
@@ -349,9 +352,9 @@ assert.deepEqual([page.editingRole(page.roleRows()[0]), page.roleRows().length],
 page.editRole(null);
 const rows = page.roleRows();
 assert.deepEqual([rows.length, page.editingRole(rows[0]), page.editingRole(rows[1])], [2, false, true]);
-Object.assign(page.roleEdit, { name: 'tester', template: '跑测试。', pick: '…', own: ' x/own ' });
+Object.assign(page.roleEdit, { name: 'tester', template: '跑测试。', pick: '…', own: ' x/own ', machineModel: ' gpt-5.5-codex ', family: 'openai' });
 await page.saveRole();
-assert.equal(JSON.stringify(roleCalls.at(-1)), JSON.stringify(['/web/tasks/roles', { name: 'tester', template: '跑测试。', model: 'x/own' }]));
+assert.equal(JSON.stringify(roleCalls.at(-1)), JSON.stringify(['/web/tasks/roles', { name: 'tester', template: '跑测试。', model: 'x/own', machineModel: 'gpt-5.5-codex', family: 'openai' }]));
 assert.equal(page.roleEdit, null);
 assert.equal(page.cloud.roles.map((role) => role.name).join('|'), 'coder|tester');
 page.api = async (path, options) => { roleCalls.push([path, options.body]); return { roles: [] }; };

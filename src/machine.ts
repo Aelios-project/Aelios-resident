@@ -5,6 +5,8 @@
 // machine's own settings: nothing here can choose them.
 import type { Sql } from "./sticker-store";
 import { askKindFields, initAskKind, validAskKind, type AskKind } from "./machine-ask-kind";
+import { MachineJobModels, requestedModelLabel } from "./machine-job-model";
+import type { MachinePick } from "./role-model";
 import { progressOf, StepStore, type Step } from "./thread-steps";
 import { ATTACH_MAX_THREAD, type Attachment } from "./attachments";
 import { PermStore, parsePermReport } from "./machine-perms";
@@ -38,7 +40,7 @@ export const FAIL_REASONS = ["permission_denied", "needs_login", "missing_key", 
  * What this resident takes beyond the first version of the protocol, named on every heartbeat's answer. A runner sends a
  * newer field or reason only when its name is here, so an older resident never gets something it refuses with a 400.
  */
-export const ACCEPTS = ["heartbeat.engine", "receipt.ahead", "reason.refused", "reason.token_limit", "reason.no_result", "ask.kind"] as const;
+export const ACCEPTS = ["heartbeat.engine", "receipt.ahead", "reason.refused", "reason.token_limit", "reason.no_result", "ask.kind", "job.model"] as const;
 /** How many places ahead of a queued turn a `queued` receipt may say. */
 const AHEAD_MAX = 99;
 
@@ -160,6 +162,7 @@ export class MachineStore {
   readonly steps: StepStore;
   /** Permissions the runner holds for the owner (machine-perms.ts). */
   readonly perms: PermStore;
+  readonly models: MachineJobModels;
 
   /**
    * `quiet` is the same database without the web page's change mark: a step arrives every few seconds, and it must not
@@ -185,6 +188,7 @@ export class MachineStore {
     sql`CREATE TABLE IF NOT EXISTS res_machine_notes (work_id TEXT PRIMARY KEY, thread TEXT NOT NULL, task_id TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL)`;
     this.steps = new StepStore(quiet);
     this.perms = new PermStore(sql);
+    this.models = new MachineJobModels(sql);
   }
 
   active(): Machine | null {
@@ -243,7 +247,7 @@ export class MachineStore {
   }
 
   /** Puts a message for a thread in line. Refused when there is no machine, or it is not online right now. */
-  enqueue(task: Task, kind: WorkKind, body: string, files: Attachment[] = []): void {
+  enqueue(task: Task, kind: WorkKind, body: string, files: Attachment[] = [], role: MachinePick | null = null): void {
     // The runner refuses a work with more attachments than this as malformed, so it is never sent.
     if (files.length > ATTACH_MAX_THREAD) fail(400, "TOO_MANY_ATTACHMENTS", `图片和文件一次最多一共 ${ATTACH_MAX_THREAD} 个`);
     this.atomic(() => {
@@ -261,8 +265,11 @@ export class MachineStore {
         AND EXISTS (SELECT 1 FROM res_machine_receipts r WHERE r.receipt_id = res_machine_work.work_id || ':final')`;
       this.sql`DELETE FROM res_machine_receipts WHERE work_id NOT IN (SELECT work_id FROM res_machine_work)`;
       this.sql`DELETE FROM res_machine_notes WHERE work_id NOT IN (SELECT work_id FROM res_machine_work)`;
-      this.sql`INSERT INTO res_machine_work VALUES (${`w_${hex(8)}`}, ${machine!.id}, ${`wt_${hex(16)}`}, ${task.id}, ${task.root}, ${kind}, ${body},
+      this.models.prune();
+      const workId = `w_${hex(8)}`;
+      this.sql`INSERT INTO res_machine_work VALUES (${workId}, ${machine!.id}, ${`wt_${hex(16)}`}, ${task.id}, ${task.root}, ${kind}, ${body},
         ${"queued"}, ${""}, ${null}, ${Date.now()}, ${JSON.stringify(files)})`;
+      if (kind !== "cancel") this.models.set(workId, role);
       // Their own words go in at once; a job or a follow-up behind unfinished work waits its turn, and its card says so from now.
       if (busy > 0 && (kind === "job" || kind === "mail")) this.tasks.progress(task.id, QUEUED_LINE, true);
     });
@@ -503,13 +510,16 @@ export class MachineStore {
 
   #shown(work: Work) {
     const title = this.tasks.get(work.task_id)?.title ?? "";
-    return { workId: work.work_id, token: work.token, thread: work.thread, kind: work.kind, title, ...(work.kind === "cancel" ? {} : { text: work.text }), ...(work.kind === "say" ? { interrupt: true } : {}), ...(work.files && work.files !== "[]" ? { attachments: JSON.parse(work.files) as Attachment[] } : {}) };
+    return { workId: work.work_id, token: work.token, thread: work.thread, kind: work.kind, title, ...this.models.get(work.work_id), ...(work.kind === "cancel" ? {} : { text: work.text }), ...(work.kind === "say" ? { interrupt: true } : {}), ...(work.files && work.files !== "[]" ? { attachments: JSON.parse(work.files) as Attachment[] } : {}) };
   }
 }
 
-/** The machine's helper and engine in a few words ("kiro · acpx@0.22.0"), or "" when its runner has not said. */
-export function machineHelper(machine: { plugin: string; engine: string } | null): string {
-  return machine ? [machine.plugin, machine.engine].filter(Boolean).join(" · ") : "";
+/**
+ * The machine's helper and engine in a few words ("kiro · acpx@0.22.0"), or "" when its runner has not said; with the
+ * model the thread's latest job asked for. Kiro always runs on auto, so on Kiro no model is shown.
+ */
+export function machineHelper(machine: { plugin: string; engine: string } | null, model = ""): string {
+  return requestedModelLabel(machine ? [machine.plugin, machine.engine].filter(Boolean).join(" · ") : "", machine?.plugin === "kiro" ? "" : model);
 }
 
 /** The note a machine thread's result leaves in the resident's conversation: a record, not a turn (hidden on her page like a task note). */
