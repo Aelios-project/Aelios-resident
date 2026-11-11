@@ -33,6 +33,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
 <!-- The page: app.css, markdown.js (x-markdown) and app.js; Alpine.js (MIT) lives in vendor/, so the page needs no CDN. -->
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/threads.css">
+<link rel="stylesheet" href="/chat-stop.css">
 <script src="/markdown.js"></script>
 <script src="/group.js"></script>
 <script src="/machine.js"></script>
@@ -41,8 +42,10 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
 <script src="/machine-ask-kind.js"></script>
 <script src="/waiting-reason.js"></script>
 <script src="/waiting.js"></script>
+<script src="/chat-permissions.js"></script>
 <script src="/progress.js"></script>
 <script src="/recommended-roles.js"></script>
+<script src="/chat-stop.js"></script>
 <script src="/app.js"></script>
 <script defer src="/vendor/alpine-3.14.9.min.js"></script>
 </head>
@@ -196,6 +199,17 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
               </div>
               <p :class="!openLetter[row.line.id] && 'clip'" x-text="row.line.text"></p>
               <button type="button" @click="toggleLetter(row.line.id)" :title="openLetter[row.line.id] ? '收起' : '读完整封'" :aria-label="openLetter[row.line.id] ? '收起' : '读完整封'"><i class="i" :class="openLetter[row.line.id] ? 'i-up' : 'i-down'" aria-hidden="true"></i></button>
+            </div>
+          </template>
+          <template x-if="row.type === 'permission'">
+            <div class="ccard chat-permission" role="group" aria-label="等你批准">
+              <div class="t" x-text="row.permission.title"></div>
+              <div class="note" x-text="row.permission.line"></div>
+              <pre style="white-space: pre-wrap; overflow-wrap: anywhere" x-text="row.permission.detail"></pre>
+              <div class="acts">
+                <button type="button" @click="answerChatPermission(row.permission, true)" :disabled="Boolean(choosing)">允许</button>
+                <button type="button" @click="answerChatPermission(row.permission, false)" :disabled="Boolean(choosing)">拒绝</button>
+              </div>
             </div>
           </template>
           <template x-if="row.type === 'typing'">
@@ -435,6 +449,9 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
         <div class="rec" role="status"><span class="red" aria-hidden="true"></span><span>在录</span><span class="len" x-text="Math.floor(recording.seconds) + ' 秒'"></span><span class="spacer"></span>
           <button class="icon-btn sm" type="button" @click="stopRecord(false)" title="取消" aria-label="取消"><i class="i i-x" aria-hidden="true"></i></button></div>
       </template>
+      <button class="round stop-reply" type="button" x-cloak x-show="chatTurn" @click="stopReply()" :disabled="stopReplyBusy || (chatTurn && chatTurn.stopping)" :aria-label="chatTurn && chatTurn.stopping ? '正在停下' : '停下这次回复'" :title="chatTurn && chatTurn.stopping ? '正在停下' : '停下这次回复'">
+        <span class="stop-mark" aria-hidden="true"></span>
+      </button>
       <button class="round go" type="button" x-show="canSend() || recording" @click="recording ? stopRecord(true) : sendDraft()" :aria-label="recording ? '发出这段语音' : '发送'">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5.5 11.5L12 5l6.5 6.5"/></svg>
       </button>
