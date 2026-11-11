@@ -32,6 +32,7 @@
 
 import { getAgentByName } from "agents";
 import { boxPublic, boxWeb } from "./box-routes";
+import { stopRequestId } from "./chat-stop";
 import { machineReply, readMachineJson } from "./machine";
 import { callerAllowed, issueSession, miniAppCaller, triesMiniApp } from "./mini-app";
 import { MCP_CALLBACK_PATH } from "./mcp-servers";
@@ -295,7 +296,7 @@ async function handleWeb(request: Request, env: Env, url: URL, at: At): Promise<
   }
   const body =
     request.method === "POST"
-      ? ((await request.json().catch(() => ({}))) as {
+      ? ((await request.json().catch(() => url.pathname === "/web/stop" ? null : {})) as {
           text?: string;
           key?: string;
           name?: string;
@@ -312,6 +313,7 @@ async function handleWeb(request: Request, env: Env, url: URL, at: At): Promise<
           sticker?: string;
           quote?: string;
           again?: boolean;
+          requestId?: unknown;
           subscription?: unknown;
           token?: unknown;
           previousToken?: unknown;
@@ -356,6 +358,12 @@ async function handleWeb(request: Request, env: Env, url: URL, at: At): Promise<
         ...(body.quote ? { quote: String(body.quote) } : {})
       });
       return Response.json(said, { status: "error" in said ? 400 : 200 });
+    }
+    case "POST /web/stop": {
+      const input = stopRequestId(body);
+      if ("error" in input) return Response.json(input, { status: 400 });
+      const stopped = await agent.webStop(input.requestId);
+      return Response.json(stopped, { status: "error" in stopped ? 409 : 200, headers: { "cache-control": "no-store" } });
     }
     case "POST /web/take-back": {
       // Its latest reply deleted, or with again: true answered anew (take-back.ts).
