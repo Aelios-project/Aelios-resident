@@ -41,6 +41,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
 <script src="/attach.js"></script>
 <script src="/machine-ask-kind.js"></script>
 <script src="/waiting.js"></script>
+<script src="/chat-permissions.js"></script>
 <script src="/progress.js"></script>
 <script src="/recommended-roles.js"></script>
 <script src="/chat-stop.js"></script>
@@ -197,6 +198,17 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
               </div>
               <p :class="!openLetter[row.line.id] && 'clip'" x-text="row.line.text"></p>
               <button type="button" @click="toggleLetter(row.line.id)" :title="openLetter[row.line.id] ? '收起' : '读完整封'" :aria-label="openLetter[row.line.id] ? '收起' : '读完整封'"><i class="i" :class="openLetter[row.line.id] ? 'i-up' : 'i-down'" aria-hidden="true"></i></button>
+            </div>
+          </template>
+          <template x-if="row.type === 'permission'">
+            <div class="ccard chat-permission" role="group" aria-label="等你批准">
+              <div class="t" x-text="row.permission.title"></div>
+              <div class="note" x-text="row.permission.line"></div>
+              <pre style="white-space: pre-wrap; overflow-wrap: anywhere" x-text="row.permission.detail"></pre>
+              <div class="acts">
+                <button type="button" @click="answerChatPermission(row.permission, true)" :disabled="Boolean(choosing)">允许</button>
+                <button type="button" @click="answerChatPermission(row.permission, false)" :disabled="Boolean(choosing)">拒绝</button>
+              </div>
             </div>
           </template>
           <template x-if="row.type === 'typing'">
