@@ -1,5 +1,5 @@
-// Permissions the runner holds for the owner (PROTOCOL.md, "permission"). The runner reports one when a helper asks for
-// something its tier does not allow, the waiting list shows it with Allow / Deny, and only the owner's button answers
+// Permissions the runner holds for the owner (PROTOCOL.md, "permission"). The runner reports one when a helper asks
+// instead of approving it itself, the waiting list shows it with Allow / Deny, and only the owner's button answers
 // it: nothing here is reachable from the model. The answer goes back in the runner's next poll; the runner closes the
 // request when it is settled anywhere (here, on the desktop, timeout, stopped turn).
 import type { Sql } from "./sticker-store";

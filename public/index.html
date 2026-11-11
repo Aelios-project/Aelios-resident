@@ -39,6 +39,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
 <script src="/boxes.js"></script>
 <script src="/attach.js"></script>
 <script src="/machine-ask-kind.js"></script>
+<script src="/waiting-reason.js"></script>
 <script src="/waiting.js"></script>
 <script src="/progress.js"></script>
 <script src="/recommended-roles.js"></script>
@@ -732,7 +733,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
             <span class="sub"><span class="what" :class="{ more }" role="button" tabindex="0" :aria-expanded="more" title="点开看全文" @click="more = !more" @keydown.enter.prevent="more = !more" @keydown.space.prevent="more = !more" x-text="item.line"></span><span x-text="fmt(item.at)"></span></span>
             <span class="sub" x-show="item.detail"><span class="what more" x-text="item.detail"></span></span>
             <span class="links">
-              <template x-if="item.kind === 'permission'"><span class="links">
+              <template x-if="item.perm"><span class="links">
                 <button class="btn small primary" type="button" :disabled="Boolean(choosing)" @click="waitingPermission(item, true)">允许</button>
                 <button class="btn small" type="button" :disabled="Boolean(choosing)" @click="waitingPermission(item, false)">拒绝</button>
               </span></template>
@@ -748,7 +749,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
       </div>
     </template>
     <template x-for="item in threadsIn('open')" :key="item.id">
-      <button class="trow" :class="{ working: item.status === 'sent' || item.status === 'working', ask: item.waiting }" type="button" @click="openThread(item.id)" title="打开线程">
+      <button class="trow" x-show="!waitingOnCard(item.id)" :class="{ working: item.status === 'sent' || item.status === 'working', ask: item.waiting }" type="button" @click="openThread(item.id)" title="打开线程">
         <span class="top-line"><span class="t"><span x-text="item.title"></span><i class="unread" x-show="unreadOf(item.id)" role="img" aria-label="有新动态" title="有新动态，点开就算看过"></i></span><span class="pill" :class="taskPill(stateOf(item))" x-text="taskStatusText(stateOf(item), item.runs)"></span></span>
         <template x-if="item.status === 'sent' || item.status === 'working'"><span class="track" aria-hidden="true"><span></span></span></template>
         <span class="progress" x-show="progressLines(item).length" aria-label="正在做"><template x-for="(s, i) in progressLines(item)" :key="i"><span x-text="s.title"></span></template></span>

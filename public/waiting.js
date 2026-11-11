@@ -8,8 +8,17 @@ function waitingPage() {
       try { this.waitList = await this.api('/web/waiting'); } catch (error) { /* the threads below still work */ }
     },
     waitingKind(item) {
+      // A thread waiting more than one way says both (src/waiting-merge.ts), a permission first.
+      if (item.reasons && item.reasons.length > 1) return item.reasons.map(waitingReasonLabel).join(' \u00b7 ');
+      if (item.reason) return waitingReasonLabel(item.reason);
+      // A held permission is one waiting reason: approval, whether it was always one or merged from others.
+      if (item.kind === 'permission' || item.perm) return waitingReasonLabel('permission');
       if (item.kind === 'ask' && item.askKind) return machineAskKindLabel(item.askKind);
-      return item.kind === 'stuck' ? '卡住了' : item.kind === 'permission' ? '要你点头' : '等你';
+      return item.kind === 'stuck' ? '\u5361\u4f4f\u4e86' : '\u7b49\u4f60';
+    },
+    // A thread with a card on this list shows once: its row below the list is left out.
+    waitingOnCard(threadId) {
+      return (this.waitList.items || []).some(function (entry) { return entry.thread === threadId; });
     },
     // An option goes the way a choice on a thread's card goes.
     async waitingAnswer(item, option) {
