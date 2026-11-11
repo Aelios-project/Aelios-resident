@@ -77,6 +77,40 @@ await test("saving: a new one goes last, a changed one keeps its place; names, t
   assert.ok(!("error" in roles.save({ name: "r0", template: "changed" })), "changing one is fine when full");
 });
 
+await test("recommendations install individually and never seed or overwrite existing roles", () => {
+  const db = new DatabaseSync(":memory:");
+  const roles = new r.RoleStore(sqlOn(db));
+  const names = ["full-stop", "council", "babysit-pr", "file-pr"];
+  assert.deepEqual(r.RECOMMENDED_ROLES.map((role) => role.name), names);
+  for (const role of r.RECOMMENDED_ROLES) {
+    assert.equal(roles.get(role.name), null, "recommendations are not defaults");
+    assert.equal(role.model, "");
+    assert.ok(role.template.length < 1500, `${role.name}: ${role.template.length} characters`);
+    assert.match(role.template, /1\.[\s\S]*2\.[\s\S]*3\./);
+    assert.match(role.template, /绝不合并、不启用自动合并、不加入合并队列、不推默认分支、不部署/);
+    assert.doesNotMatch(role.template, /(?:允许|可以|可直接|通过后|完成后)(?:合并|部署)|watch_pull_request|delegate_task|pr-wait|Claude|GPT|Gemini|\bshe\b|\bher\b/i);
+    assert.deepEqual(roles.save(role), role);
+    assert.equal(roles.list().length, 4 + names.indexOf(role.name));
+  }
+  roles.save({ name: "council", template: "Custom instructions", model: "my/model" });
+  const restarted = new r.RoleStore(sqlOn(db));
+  assert.equal(restarted.get("council").template, "Custom instructions");
+  assert.equal(restarted.get("council").model, "my/model");
+  restarted.remove("full-stop");
+  assert.equal(new r.RoleStore(sqlOn(db)).get("full-stop"), null, "removed recommendations do not return on restart");
+});
+
+await test("recommended installs respect the role limit without changing other roles", () => {
+  const roles = new r.RoleStore(sqlOn(new DatabaseSync(":memory:")));
+  for (let i = roles.list().length; i < r.ROLES_MAX; i += 1) roles.save({ name: `custom-${i}`, template: "Custom instructions" });
+  const before = roles.list();
+  for (const role of r.RECOMMENDED_ROLES) assert.match(roles.save(role).error, /最多 12 个/);
+  assert.deepEqual(roles.list(), before);
+  roles.remove(before.at(-1).name);
+  assert.deepEqual(roles.save(r.RECOMMENDED_ROLES[0]), r.RECOMMENDED_ROLES[0]);
+  assert.equal(roles.list().length, r.ROLES_MAX);
+});
+
 await test("a role's job is its template, then the resident's words; a wrong role names the ones there are", () => {
   assert.equal(r.withRole({ name: "reviewer", template: "只读审查。", model: "" }, "审 #41"), "只读审查。\n\n审 #41");
   const roles = [{ name: "coder" }, { name: "reviewer" }];

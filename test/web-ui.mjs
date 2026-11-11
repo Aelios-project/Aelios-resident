@@ -6,7 +6,7 @@ const html = readFileSync('public/index.html', 'utf8');
 const code = readFileSync('public/app.js', 'utf8');
 const markdown = readFileSync('public/markdown.js', 'utf8');
 // The parts app.js mixes into the page's state, as the page loads them.
-const mixins = { groupPage: 'public/group.js', machinePage: 'public/machine.js', waitingPage: 'public/waiting.js', attachPage: 'public/attach.js' };
+const mixins = { groupPage: 'public/group.js', machinePage: 'public/machine.js', waitingPage: 'public/waiting.js', attachPage: 'public/attach.js', recommendedRolesPage: 'public/recommended-roles.js' };
 assert.ok(html.includes('<script src="/app.js"></script>'), 'the page loads its script from /app.js');
 for (const file of Object.values(mixins)) assert.ok(html.includes(`<script src="/${file.slice('public/'.length)}"></script>`), `the page loads ${file}`);
 const resized = [];
@@ -369,6 +369,50 @@ assert.equal(page.roleError, '名字用小写英文字母开头');
 assert.ok(page.roleEdit, 'what she wrote stays to fix');
 page.roleEdit = null;
 console.log('PASS roles: icon buttons, a model from the list or written in, saved and removed');
+
+// Recommendations are opt-in, saved individually, and never overwrite an installed name.
+assert.ok(html.includes('@click="installRecommendedRole(pack)"') && html.includes('x-text="pack.template"'));
+assert.ok(html.includes('recommendedRoleFull() || recommendedRoleInstalled(pack)'));
+assert.ok(html.indexOf('<script src="/recommended-roles.js"></script>') < html.indexOf('<script src="/app.js"></script>'));
+page.cloud = { roles: [], rolesMax: 4 };
+assert.equal(page.recommendedRoleFull(), false, 'old responses without a catalog still work');
+const installedPacks = [];
+page.api = async (path, options) => {
+  installedPacks.push([path, copy(options.body)]);
+  return { roles: [...copy(page.cloud.roles), copy(options.body)] };
+};
+for (const name of ['full-stop', 'council', 'babysit-pr', 'file-pr']) {
+  const pack = { name, template: 'Instructions for ' + name, model: '' };
+  assert.equal(page.recommendedRoleInstalled(pack), false);
+  await page.installRecommendedRole(pack);
+  assert.equal(page.recommendedRoleInstalled(pack), true);
+  assert.deepEqual(installedPacks.at(-1), ['/web/tasks/roles', pack]);
+  await page.installRecommendedRole({ ...pack, template: 'Must not overwrite' });
+  assert.equal(installedPacks.length, page.cloud.roles.length, 'same-name install is a no-op');
+}
+assert.equal(page.recommendedRoleFull(), true);
+await page.installRecommendedRole({ name: 'extra', template: 'x', model: '' });
+assert.equal(installedPacks.length, 4, 'the server-provided role limit applies');
+page.cloud.rolesMax = 12;
+page.roleEdit = { name: 'unsaved' };
+await page.installRecommendedRole({ name: 'extra', template: 'x', model: '' });
+assert.equal(installedPacks.length, 4, 'installing does not discard an open editor');
+page.roleEdit = null;
+let releaseInstall;
+page.api = () => new Promise((resolve) => { releaseInstall = resolve; });
+const pendingInstall = page.installRecommendedRole({ name: 'extra', template: 'x', model: '' });
+assert.equal(page.roleBusy, true);
+await page.installRecommendedRole({ name: 'another', template: 'x', model: '' });
+releaseInstall({ roles: copy(page.cloud.roles) });
+await pendingInstall;
+assert.equal(page.roleBusy, false);
+page.api = async () => { throw new Error('Install failed'); };
+const beforeFailedInstall = copy(page.cloud.roles);
+await page.installRecommendedRole({ name: 'extra', template: 'x', model: '' });
+assert.equal(page.roleError, 'Install failed');
+assert.deepEqual(copy(page.cloud.roles), beforeFailedInstall);
+assert.equal(page.roleBusy, false);
+console.log('PASS recommended roles: opt-in installs, duplicates, limits, busy and failure handling');
 
 // Threads: a file is fetched as bytes and shown by its kind; a page only inside a sandboxed frame.
 assert.ok(html.includes('<iframe class="file-page" sandbox="allow-scripts"'), 'a page runs apart from this one');
