@@ -20,6 +20,10 @@ function waitingPage() {
     waitingOnCard(threadId) {
       return (this.waitList.items || []).some(function (entry) { return entry.thread === threadId; });
     },
+    waitingThreads(group) {
+      var self = this;
+      return this.threadsIn(group).filter(function (thread) { return !self.waitingOnCard(thread.id); });
+    },
     // An option goes the way a choice on a thread's card goes.
     async waitingAnswer(item, option) {
       if (this.choosing) return;
@@ -36,6 +40,7 @@ function waitingPage() {
       this.choosing = item.id;
       try { this.waitList = await this.api('/web/waiting/permission', { method: 'POST', body: { id: item.perm, allow: allow } }); }
       catch (error) { this.notify(error.message); await this.loadWaiting(); }
+      if (this.syncChatPermissions) this.syncChatPermissions({ permissions: this.waitList.items.filter(function (entry) { return entry.kind === 'permission' && entry.perm; }) });
       this.choosing = '';
     },
     // Opening a thread reads its news.

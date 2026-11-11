@@ -45,12 +45,12 @@ await test("one card per thread: a held permission and a question become one car
 await test("a typed approval with no handle routes its options through the task, never an Allow / Deny on no id", () => {
   const [card] = merge.mergeByThread([
     item({ id: "a:ask:k2", askKind: "question", line: "Which?", options: ["A"], at: now - 2000 }),
-    item({ id: "a:ask:k1", askKind: "permission", line: "Run the tests?", options: ["Allow", "Deny"], at: now - 3000 })
+    item({ id: "a:ask:k1", askKind: "permission", task: "approval-task", line: "Run the tests?", options: [], at: now - 3000 })
   ]);
   assert.equal(card.perm, undefined, "there is no live request to answer");
   assert.deepEqual(card.reasons, ["permission", "question"]);
-  assert.deepEqual(card.options, ["A"], "the question keeps its own options to answer through the task");
-  assert.equal(card.task, "a-t");
+  assert.deepEqual(card.options, ["Allow", "Deny"], "approval buttons remain available without a live handle");
+  assert.equal(card.task, "approval-task", "the decision goes to the approval task");
 });
 
 await test("the newest live permission wins, keeping its own title and detail; a stray question line does not displace it", () => {
@@ -85,16 +85,26 @@ await test("a stuck failure and an ask on one thread are one card too", () => {
   assert.equal(merged[0].options.length, 1);
 });
 
-await test("the card threads are exactly the threads with a card, so the page draws no second row", () => {
-  const items = merge.mergeByThread([perm(), item({ thread: "b", id: "b:ask:k1" })]);
-  assert.deepEqual(merge.threadsOnCards(items).sort(), ["a", "b"]);
+await test("the real page filters duplicate open and completed thread rows", () => {
+  const context = vm.createContext({});
+  vm.runInContext(readFileSync("public/waiting.js", "utf8"), context);
+  const page = vm.runInContext("waitingPage()", context);
+  page.waitList.items = [{ thread: "waiting" }];
+  page.threadsIn = () => [{ id: "waiting" }, { id: "other" }];
+  for (const group of ["open", "done"]) {
+    assert.deepEqual(Array.from(page.waitingThreads(group), (row) => row.id), ["other"]);
+  }
+  const html = readFileSync("public/index.html", "utf8");
+  assert.ok(html.includes('x-for="item in waitingThreads(\'open\')"'));
+  assert.ok(html.includes('x-for="item in waitingThreads(\'done\')"'));
+  assert.ok(!html.includes('x-for="item in threadsIn('), "both thread lists use the filtered page data");
 });
 
 await test("an old tier refusal in a stored line is shown as today's approval wording, and nothing else is rewritten", () => {
   const legacy = "The helper wanted to do the following, but this machine's tier is read, so it was refused.";
-  assert.equal(merge.currentWording(legacy), merge.currentWording(legacy).replace(/x/, "x"));
+  assert.equal(merge.currentWording(legacy), "The helper needs your approval for the following operation.");
   assert.ok(!/tier is read/i.test(merge.currentWording(legacy)), "the obsolete phrase is gone");
-  assert.match(merge.currentWording(legacy), /waiting for your approval/);
+  assert.match(merge.currentWording(legacy), /needs your approval/);
   assert.equal(merge.currentWording("The helper wanted to run rm -rf build."), "The helper wanted to run rm -rf build.", "other text untouched");
   const [card] = merge.mergeByThread([item({ line: legacy })]);
   assert.ok(!/tier is read/i.test(card.line), "the card shows the current wording");
@@ -147,7 +157,6 @@ await test("the store lists one card for a thread that holds a permission and as
   assert.equal(card.perm, "p_aaaaaaaaaa", "Allow / Deny still answers the held permission");
   assert.deepEqual(card.options, ["A"], "the question is answered from the same card");
   assert.deepEqual(card.reasons, ["permission", "question"]);
-  assert.deepEqual(merge.threadsOnCards(items), [task.id], "the page draws no second row for this thread");
   // Answering the permission leaves the question on its own card.
   assert.equal(f.list.decide("p_aaaaaaaaaa", true), true);
   const after = f.list.list().items;

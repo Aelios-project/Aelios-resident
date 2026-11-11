@@ -37,7 +37,8 @@ export function mergeByThread(items: WaitingItem[]): MergedItem[] {
   const byThread = new Map<string, MergedItem[]>();
   for (const source of items) {
     // The stored sentence may be the old tier refusal; the card shows what it means today.
-    const item: MergedItem = { ...source, line: currentWording(source.line), ...(source.detail ? { detail: currentWording(source.detail) } : {}) };
+    const item: MergedItem = { ...source, line: currentWording(source.line),
+      ...(source.kind === "ask" && source.askKind === "permission" ? { options: ["Allow", "Deny"] } : {}) };
     const list = byThread.get(item.thread) ?? [];
     list.push({ ...item, reason: reasonOf(item) });
     byThread.set(item.thread, list);
@@ -54,12 +55,11 @@ export function mergeByThread(items: WaitingItem[]): MergedItem[] {
     const typed = byTime.find((item) => item.kind === "ask" && item.askKind === "permission");
     const asked = byTime.find((item) => item.kind === "ask" && item.askKind !== "permission");
     // Where an answer goes: a question's options to the task that asked them, else a typed approval's own options.
-    const answer = asked ?? typed ?? live ?? byTime[0];
-    const shown = live ?? byTime.find((item) => item.line) ?? byTime[0];
+    const answer = live ? (asked ?? live) : (typed ?? asked ?? byTime[0]);
+    const shown = live ?? typed ?? asked ?? byTime[0];
     merged.push({ ...shown,
-      id: `${byTime[0].thread}:waiting`,
-      // The card's kind is the item that carries the buttons or the answer; the reasons say what to do.
-      kind: live ? "permission" : byTime[0].kind,
+      // Retain the primary item's identity, including a stuck item's dismiss handle.
+      kind: shown.kind,
       title: shown.title,
       line: shown.line || list.find((item) => item.line)?.line || "",
       at: byTime[0].at,
@@ -71,12 +71,7 @@ export function mergeByThread(items: WaitingItem[]): MergedItem[] {
       ...(live?.perm ? { perm: live.perm } : { perm: undefined }),
       detail: shown.detail ?? list.find((item) => item.detail)?.detail });
   }
-  return merged.sort((a, b) => Number(b.kind === "stuck") - Number(a.kind === "stuck") || b.at - a.at);
-}
-
-/** The threads that already have a card: the page shows no row of its own for these, or the thread would be twice. */
-export function threadsOnCards(items: WaitingItem[]): string[] {
-  return [...new Set(items.map((item) => item.thread))];
+  return merged.sort((a, b) => Number(a.kind === "stuck") - Number(b.kind === "stuck") || b.at - a.at);
 }
 
 /**
@@ -84,8 +79,8 @@ export function threadsOnCards(items: WaitingItem[]): string[] {
  * receipt. The tier is gone: a helper asks, and the owner approves. Only that known obsolete phrasing is rewritten,
  * so an old item reads as what it now means; nothing else in anyone's words is touched.
  */
-const OLD_TIER_REFUSAL = /\b(?:this machine'?s )?tier is read\b[^.!?]*/i;
-const APPROVAL_WORDING = "The helper asked to do this and is waiting for your approval";
+const OLD_TIER_REFUSAL = /^The helper wanted to do the following, but this machine['\u2019]s tier is read\b[^.!?\n]*(?:[.!?])?/i;
+const APPROVAL_WORDING = "The helper needs your approval for the following operation.";
 
 /** The line as shown for an item whose stored text still carries the old tier refusal. */
 export function currentWording(line: string): string {
