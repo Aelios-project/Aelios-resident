@@ -2878,7 +2878,7 @@ function resident() {
       var model = role ? role.model : '';
       var listed = !model || this.roleModels().indexOf(model) >= 0;
       this.roleError = '';
-      this.roleEdit = { fresh: !role, name: role ? role.name : '', template: role ? role.template : '', pick: listed ? model : '…', own: listed ? '' : model };
+      this.roleEdit = { fresh: !role, name: role ? role.name : '', template: role ? role.template : '', pick: listed ? model : '…', own: listed ? '' : model, machineModel: role ? role.machineModel || '' : '', family: role ? role.family || '' : '' };
     },
     roleModelText(role) {
       return role.model ? this.shortName(role.model) : '线程的模型';
@@ -2890,7 +2890,7 @@ function resident() {
       this.roleError = '';
       try {
         var model = edit.pick === '…' ? edit.own.trim() : edit.pick;
-        var saved = await this.api('/web/tasks/roles', { method: 'POST', body: { name: edit.name, template: edit.template, model: model } });
+        var saved = await this.api('/web/tasks/roles', { method: 'POST', body: { name: edit.name, template: edit.template, model: model, machineModel: (edit.machineModel || '').trim(), family: (edit.family || '').trim() } });
         this.cloud.roles = saved.roles;
         this.roleEdit = null;
       } catch (error) {

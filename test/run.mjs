@@ -47,7 +47,7 @@ import crypto from "node:crypto";
 import http from "node:http";
 import { GIF, PNG, WEBM, WEBP, zip } from "./zip.mjs";
 
-const WORKER = "http://127.0.0.1:8787";
+const WORKER = process.env.TEST_WORKER ?? "http://127.0.0.1:8787";
 const MOCK = "http://127.0.0.1:9999";
 const SECRET = "test-secret";
 const phase = process.argv[2] ?? "main";
@@ -1905,7 +1905,7 @@ if (phase === "tasks" || phase === "tasks-quiet" || phase === "tasks-roles") {
   // Roles on a worker of their own: the tasks stage uses all ten of the day.
   if (phase === "tasks-roles") {
     await set({ CLOUD_TASKS: "on" });
-    await step("roles: three come with it; one she adds on the settings page, with its own model, does a thread's job with its template first", async () => {
+    await step("roles: three come with it; one the user adds on the settings page, with its own model, does a thread's job with its template first", async () => {
       assert.deepEqual((await tasks()).roles.map((role) => [role.name, role.model]), [["coder", ""], ["reviewer", ""], ["researcher", ""]]);
       const bad = await web("/web/tasks/roles", KEY, { name: "测试", template: "x" });
       assert.equal(bad.status, 400);
@@ -1916,6 +1916,18 @@ if (phase === "tasks" || phase === "tasks-quiet" || phase === "tasks-roles") {
       const saved = await web("/web/tasks/roles", KEY, { name: "tester", template: "只跑测试，写出哪些没过。", model: "fake" });
       assert.equal(saved.status, 200);
       assert.deepEqual((await saved.json()).roles.map((role) => role.name), ["coder", "reviewer", "researcher", "tester"]);
+      // The machine part goes through the same address and is kept apart from the threads' model.
+      const machined = await web("/web/tasks/roles", KEY, { name: "reviewer", template: "只看不改。", model: "", machineModel: "claude-sonnet-4-6", family: "anthropic" });
+      assert.equal(machined.status, 200);
+      assert.deepEqual((await machined.json()).roles.find((role) => role.name === "reviewer"), { name: "reviewer", template: "只看不改。", model: "", machineModel: "claude-sonnet-4-6", family: "anthropic" });
+      const machineRole = { name: "reviewer", template: "只看不改。", model: "", machineModel: "claude-sonnet-4-6", family: "anthropic" };
+      assert.deepEqual((await tasks()).roles.find((role) => role.name === "reviewer"), machineRole, "a fresh GET reads both machine fields from storage");
+      const invalidFamily = await web("/web/tasks/roles", KEY, { name: "reviewer", template: "x", machineModel: "m", family: "Anthropic" });
+      assert.equal(invalidFamily.status, 400);
+      assert.match((await invalidFamily.json()).error, /家族/);
+      assert.deepEqual((await tasks()).roles.find((role) => role.name === "reviewer"), machineRole, "a rejected family does not alter the role");
+      assert.equal((await web("/web/tasks/roles", KEY, { name: "reviewer", template: machineRole.template, model: "fake" })).status, 200);
+      assert.deepEqual((await tasks()).roles.find((role) => role.name === "reviewer"), { ...machineRole, model: "fake" }, "an old client can change the cloud model without dropping either machine field");
       assert.match(await ask("按角色派活 nobody"), /there is no role nobody\. Their roles: coder, reviewer, researcher, tester\./);
       const before = (await sent()).length;
       await post("按角色派活 tester");

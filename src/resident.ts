@@ -1406,7 +1406,7 @@ export class Resident extends Think<Env> {
   }
 
   /** The settings page's roles: saved (added or changed) or removed; the list as it now is. */
-  webSaveRole(input: { name?: unknown; template?: unknown; model?: unknown }): { roles: Role[] } | { error: string } {
+  webSaveRole(input: { name?: unknown; template?: unknown; model?: unknown; machineModel?: unknown; family?: unknown }): { roles: Role[] } | { error: string } {
     const saved = this.taskRoles().save(input);
     return "error" in saved ? saved : { roles: this.taskRoles().list() };
   }
@@ -1697,7 +1697,7 @@ export class Resident extends Think<Env> {
       // Theirs goes in at once (the running turn stops); the resident's own follow-up waits its turn.
       const kind: WorkKind = input.direct ? "say" : follows ? "mail" : "job";
       try {
-        this.machines().enqueue(added.task, kind, input.job, files);
+        this.machines().enqueue(added.task, kind, input.job, files, this.taskRoles().get(added.task.role));
       } catch (error) {
         store.drop(added.task.id);
         return { error: error instanceof Error ? error.message : String(error) };
@@ -2170,7 +2170,7 @@ export class Resident extends Think<Env> {
       lines,
       files,
       canSay: this.cloudTasksOn() && (latest.runs === "local" || latest.runs === "machine"),
-      ...(latest.runs === "machine" ? { asks: this.machines().asks(root), helper: machineHelper(this.machines().status().machine) } : {}),
+      ...(latest.runs === "machine" ? { asks: this.machines().asks(root), helper: machineHelper(this.machines().status().machine, this.machines().models.forThread(root)) } : {}),
       ...(latest.runs === "machine" && latest.status === "working" ? { steps: this.machines().steps.last(root, 3) } : {})
     };
   }
