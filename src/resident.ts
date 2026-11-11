@@ -209,6 +209,7 @@ import { MEMORY_HEADER, aeliosModel, listModels, onMessages, type AeliosModel, t
 import { effortOf } from "./thinking";
 import { takeBack } from "./take-back";
 import { activityOf, WebDraft, type Activity } from "./web/history";
+import { ChatStop, type ChatTurn, type StopResult } from "./chat-stop";
 import { GROUPS_MAX, GROUP_HEAD, GROUP_PICTURES_MAX, GROUP_TEXT_MAX, GroupStore, HER, afterTurn, cleanReply, groupConfigFrom, groupHeard, membersOf, named, speakersFor, type Group, type GroupLine, type GroupSticker, type Member } from "./group";
 import { AROUND, SEARCH_PAGE, SEARCH_ROWS, hitIn, searchQuery, searchable, storedLike, type ChatHit, type ChatLine } from "./chat-search";
 import { findTools, type FindHost } from "./find-tools";
@@ -568,6 +569,7 @@ export class Resident extends Think<Env> {
   // Live activity is a web-only projection; the SDK remains the owner of the transcript.
   #drafts = new Map<string, WebDraft>();
   #draftActive: (() => boolean) | null = null;
+  #chatStop = new ChatStop();
 
   override onChunk({ chunk }: ChunkContext): void {
     const id = this.activeTurn?.requestId;
@@ -2723,6 +2725,8 @@ export class Resident extends Think<Env> {
       // activeTurn is async-context-local; a separate history RPC must check it inside the captured turn.
       const withinTurn = AsyncLocalStorage.snapshot();
       this.#draftActive = () => withinTurn(() => this.activeTurn?.requestId === ctx.requestId);
+      this.#chatStop.start(ctx.requestId, this.#draftActive);
+      this.webChanged();
     }
     const thread = ctx.messenger?.thread;
     // Where she last wrote from is where messages outside a turn go.
@@ -3471,6 +3475,12 @@ export class Resident extends Think<Env> {
     const letter = this.letterJob();
     if (letter && before?.id === letter.promptId) {
       await this.finishLetter(letter, result.status, result.message.id);
+      return;
+    }
+    if (await this.#chatStop.finish(result, (id) => this.session.deleteMessages([id]))) {
+      if (result.requestId) this.#outbox.delete(`req:${result.requestId}`);
+      this.#turnVoice = null;
+      this.webChanged();
       return;
     }
     // Files make_file made go with this reply even when it did not finish: a file made stays made.
@@ -4284,15 +4294,23 @@ export class Resident extends Think<Env> {
    * The web page's look at the conversation: all of it with its version, or `same` when it has that version and no
    * reply is being written (a draft changes with every word, so then it is read in full).
    */
-  async webLook(since: string | null): Promise<({ data: WebLine[]; rev: string } | { same: true; rev: string }) & { permissions: ReturnType<typeof chatPermissions>; waiting: ReturnType<WaitingStore["list"]> }> {
+  async webLook(since: string | null): Promise<({ data: WebLine[]; rev: string } | { same: true; rev: string }) & { turn: ChatTurn | null; permissions: ReturnType<typeof chatPermissions>; waiting: ReturnType<WaitingStore["list"]> }> {
     const waiting = this.waiting().list();
     const permissions = chatPermissions(waiting.items);
     const rev = this.webRevision();
+    const turn = this.#chatStop.current();
     if (since && since === rev && !this.#drafts.size) {
       this.#webSeenAt = Date.now();
-      return { same: true, rev, permissions, waiting };
+      return { same: true, rev, turn, permissions, waiting };
     }
-    return { data: await this.webHistory(), rev, permissions, waiting };
+    return { data: await this.webHistory(), rev, turn, permissions, waiting };
+  }
+
+  /** Cancels only the current chat turn; queued messages and machine jobs are untouched. */
+  webStop(requestId?: string): StopResult {
+    const result = this.#chatStop.stop(requestId, (id) => this.cancelChat(id, "Stopped by the user."));
+    this.webChanged();
+    return result;
   }
 
   /** An answer picked on a thread's card that waits for their decision: to the thread, or else to the resident. */

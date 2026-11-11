@@ -673,6 +673,7 @@ function resident() {
       picLoading = {};
       this.identity = known ? { name: known.name, avatar: known.avatar } : { name: '住户', avatar: null };
       this.lines = [];
+      if (this.syncChatTurn) this.syncChatTurn(null);
       if (this.syncChatPermissions) this.syncChatPermissions(null);
       this.outbox = [];
       this.loaded = false;
@@ -770,6 +771,7 @@ function resident() {
       this.authed = false;
       this.loaded = false;
       this.lines = [];
+      if (this.syncChatTurn) this.syncChatTurn(null);
       if (this.syncChatPermissions) this.syncChatPermissions(null);
       this.outbox = [];
       this.view = 'chat';
@@ -820,14 +822,14 @@ function resident() {
     },
     // Waiting for a reply that has not started to show.
     waiting() {
-      if (!this.sending) return false;
+      if (!this.sending && !this.chatTurn) return false;
       if (this.outbox.some(function (item) { return item.state === 'sending'; })) return true;
       var lastUser = -1;
       for (var i = this.lines.length - 1; i >= 0; i--) if (this.lines[i].role === 'user') { lastUser = i; break; }
       return !this.lines.slice(lastUser + 1).some(function (line) { return line.role === 'assistant' && line.kind === 'chat'; });
     },
     replying() {
-      return this.sending > 0 || this.lines.some(function (line) { return line.pending; });
+      return Boolean(this.chatTurn) || this.sending > 0 || this.lines.some(function (line) { return line.pending; });
     },
     // Its latest reply, once it is done, can be taken back from its menu: deleted, or answered again.
     takeBackable(line) {
@@ -851,7 +853,7 @@ function resident() {
       }
       try {
         var result = await this.api('/web/take-back', { method: 'POST', body: { id: line.id, again: again } });
-        if (again && result.status !== 'completed') throw new Error('没回出来（' + result.status + '），再点一次试试');
+        if (again && result.status !== 'completed' && result.status !== 'aborted') throw new Error('没回出来（' + result.status + '），再点一次试试');
       } catch (error) {
         this.notify(error.message);
       } finally {
@@ -1001,6 +1003,7 @@ function resident() {
     took(data) {
       if (this.syncChatPermissions) this.syncChatPermissions(data);
       if (data && data.rev) seenRev = data.rev;
+      if (data && this.syncChatTurn && Object.prototype.hasOwnProperty.call(data, 'turn')) this.syncChatTurn(data.turn);
       if (data && data.same) return null;
       fullAt = Date.now();
       return (data && data.data) || [];
@@ -1097,7 +1100,7 @@ function resident() {
       this.poll(true);
       try {
         var result = await this.api('/web/say', { method: 'POST', body: payload });
-        if (result.status === 'empty') this.dropLocal(item.tid);
+        if (result.status === 'empty' || result.status === 'aborted') this.dropLocal(item.tid);
         else if (result.status !== 'completed') throw new Error('这句没回出来（' + result.status + '），再发一次试试');
       } catch (error) {
         var still = this.outbox.find(function (o) { return o.tid === item.tid; });
@@ -3117,5 +3120,5 @@ function resident() {
       this.toast = message;
       setTimeout(function () { if (self.toast === message) self.toast = ''; }, 2400);
     }
-  }, typeof groupPage === 'function' ? groupPage() : {}, typeof machinePage === 'function' ? machinePage() : {}, typeof boxesPage === 'function' ? boxesPage() : {}, typeof attachPage === 'function' ? attachPage() : {}, typeof waitingPage === 'function' ? waitingPage() : {}, typeof chatPermissionsPage === 'function' ? chatPermissionsPage() : {}, typeof progressPage === 'function' ? progressPage() : {}, typeof recommendedRolesPage === 'function' ? recommendedRolesPage() : {});
+  }, typeof groupPage === 'function' ? groupPage() : {}, typeof machinePage === 'function' ? machinePage() : {}, typeof boxesPage === 'function' ? boxesPage() : {}, typeof attachPage === 'function' ? attachPage() : {}, typeof waitingPage === 'function' ? waitingPage() : {}, typeof chatPermissionsPage === 'function' ? chatPermissionsPage() : {}, typeof progressPage === 'function' ? progressPage() : {}, typeof recommendedRolesPage === 'function' ? recommendedRolesPage() : {}, typeof chatStopPage === 'function' ? chatStopPage() : {});
 }
