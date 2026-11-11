@@ -756,7 +756,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
         <span class="sub"><span x-text="runsText(item.runs) + ' · ' + item.tasks + ' 单'"></span><span x-text="fmt(item.updatedAt)"></span></span>
       </button>
     </template>
-    <p class="group-title" x-show="waitingThreads('done').length">做完的</p>
+    <p class="group-title" x-show="waitingThreads('done').length">&#20570;&#23436;&#30340;</p>
     <div class="list" x-show="waitingThreads('done').length">
       <template x-for="item in waitingThreads('done')" :key="item.id">
         <button class="li" type="button" @click="openThread(item.id)" title="打开线程">
