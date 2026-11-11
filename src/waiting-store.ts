@@ -3,6 +3,7 @@ import type { TaskStore } from "./cloud-tasks";
 import type { MachineStore } from "./machine";
 import type { Sql } from "./sticker-store";
 import { ITEM_DROPPED_MS, askPush, build, type WaitingItem } from "./waiting";
+import { mergeByThread } from "./waiting-merge";
 
 const THREADS_LOOKED_AT = 100;
 
@@ -23,12 +24,13 @@ export class WaitingStore {
     return build({ asks: this.machines.allAsks(), perms: this.machines.perms.pending(), notes: this.machines.notes(), threads, seen, now });
   }
 
-  /** What needs the owner, how many asks are open, and the unread news per thread. */
+  /** What needs the owner, how many asks are open, and the unread news per thread. One card per thread (waiting-merge.ts). */
   list(now = Date.now()): { items: WaitingItem[]; open: number; unread: Record<string, number> } {
     const { items, news } = this.#built(now);
     const unread: Record<string, number> = {};
     for (const item of news) unread[item.thread] = (unread[item.thread] ?? 0) + 1;
-    return { items, open: items.length, unread };
+    const merged = mergeByThread(items);
+    return { items: merged, open: merged.length, unread };
   }
 
   /** The owner opened a thread (or null: read everything): its news counts as read. */
@@ -49,12 +51,15 @@ export class WaitingStore {
     return this.machines.perms.answer(perm, allow);
   }
 
-  /** The pushes still to send: each open ask once. */
+  /** The pushes still to send: each open ask and each held permission once, by its own id, so a second request in one thread still pushes. */
   unpushed(): { body: string; tag: string }[] {
     const out: { body: string; tag: string }[] = [];
-    for (const item of this.list().items) {
+    const { items } = this.#built(Date.now());
+    for (const item of items) {
       if (item.kind !== "ask" && item.kind !== "permission") continue;
-      const mark = `push:${item.id}`;
+      // The request that asks, not the card it is shown on: a thread's second permission is a second push.
+      const key = item.kind === "permission" && item.perm ? `${item.thread}:perm:${item.perm}` : item.id;
+      const mark = `push:${key}`;
       if (this.sql`SELECT 1 FROM res_waiting_seen WHERE id = ${mark}`.length) continue;
       this.sql`INSERT INTO res_waiting_seen VALUES (${mark}, ${Date.now()})`;
       out.push(askPush(item));

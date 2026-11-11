@@ -5,11 +5,27 @@ function waitingPage() {
   return {
     waitList: { items: [], open: 0, unread: {} },
     async loadWaiting() {
-      try { this.waitList = await this.api('/web/waiting'); } catch (error) { /* the threads below still work */ }
+      try { this.waitList = await this.api('/web/waiting'); this.syncWaitingChat(); } catch (error) { /* the threads below still work */ }
+    },
+    syncWaitingChat() {
+      if (this.syncChatPermissions) this.syncChatPermissions({ permissions: this.waitList.items.filter(function (entry) { return (entry.kind === 'permission' && entry.perm) || (entry.kind === 'ask' && entry.askKind === 'permission'); }) });
     },
     waitingKind(item) {
+      // A thread waiting more than one way says both (src/waiting-merge.ts), a permission first.
+      if (item.reasons && item.reasons.length > 1) return item.reasons.map(waitingReasonLabel).join(' · ');
+      if (item.reason) return waitingReasonLabel(item.reason);
+      // A held permission is one waiting reason: approval, whether it was always one or merged from others.
+      if (item.kind === 'permission' || item.perm) return waitingReasonLabel('permission');
       if (item.kind === 'ask' && item.askKind) return machineAskKindLabel(item.askKind);
-      return item.kind === 'stuck' ? '卡住了' : item.kind === 'permission' ? '要你点头' : '等你';
+      return item.kind === 'stuck' ? '卡住了' : '等你';
+    },
+    // A thread with a card on this list shows once: its row below the list is left out.
+    waitingOnCard(threadId) {
+      return (this.waitList.items || []).some(function (entry) { return entry.thread === threadId; });
+    },
+    waitingThreads(group) {
+      var self = this;
+      return this.threadsIn(group).filter(function (thread) { return !self.waitingOnCard(thread.id); });
     },
     // An option goes the way a choice on a thread's card goes.
     async waitingAnswer(item, option) {
@@ -27,6 +43,7 @@ function waitingPage() {
       this.choosing = item.id;
       try { this.waitList = await this.api('/web/waiting/permission', { method: 'POST', body: { id: item.perm, allow: allow } }); }
       catch (error) { this.notify(error.message); await this.loadWaiting(); }
+      this.syncWaitingChat();
       this.choosing = '';
     },
     // Opening a thread reads its news.
