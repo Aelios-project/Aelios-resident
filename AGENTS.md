@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Aelios-resident is an AI companion that runs as one Cloudflare Worker (`aelios-resident`) with one Durable Object, built on Cloudflare's Think. People talk to it on its web door, and optionally on Telegram and WeCom (企业微信; replies to WeCom go through the small relay in `relay/wecom/`, which runs on a machine with a fixed IP behind a Cloudflare Tunnel). With [Aelios](https://github.com/wusaki0723/Aelios) connected it chats through Aelios and remembers.
+Aelios-resident is an AI companion that runs as one Cloudflare Worker (`aelios-resident`) with one Durable Object, built on Cloudflare's Think. People talk to it on its web door, and optionally on Telegram and WeCom (企业微信; replies to WeCom go through the small relay in `relay/wecom/`, which runs on a machine with a fixed IP behind a Cloudflare Tunnel). It requires [Aelios](https://github.com/Aelios-project/Aelios): it chats through Aelios and remembers there.
 
 ## If the user wants the resident set up
 
-Follow [docs/setup-with-ai.md](docs/setup-with-ai.md) step by step. It starts from a fresh Cloudflare account (fork and deploy), generates the web door key, connects Telegram if the user wants it, gives the resident an identity in Aelios, picks the model and fills the settings through the web door's API. Users who already have a resident skip the deploy step. If they want long-term memory and have no Aelios yet, set up Aelios first with its own guide.
+Follow [docs/setup-with-ai.md](docs/setup-with-ai.md) step by step. It starts from a fresh Cloudflare account (fork and deploy), generates the web door key, connects Telegram if the user wants it, gives the resident an identity in Aelios, picks the model and fills the settings through the web door's API. Users who already have a resident skip the deploy step. The resident needs Aelios; if the user has no Aelios yet, set up Aelios first with its own guide.
 
 ## Rules that apply to every task in this repo
 
