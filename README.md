@@ -39,9 +39,9 @@ No server to rent and no code to write: send one message to an AI that can run c
 
 ### It remembers you
 
-- Connect [Aelios](https://github.com/wusaki0723/Aelios), a memory service you deploy yourself, and everything you say brings up what is related from before, and every turn is kept. The name of the cat you mentioned months ago, what you are working toward, what you can't stand eating: it knows.
+- It is built on [Aelios](https://github.com/Aelios-project/Aelios), a memory service you deploy yourself: everything you say brings up what is related from before, and every turn is kept. The name of the cat you mentioned months ago, what you are working toward, what you can't stand eating: it knows.
 - After a long talk it writes a handoff letter to its later self and puts the older chat away, keeping only the most recent part word for word. Tomorrow picks up where today left off.
-- Each resident's memories are its own: with Aelios connected, every resident has its own identity and remembers for itself.
+- Each resident's memories are its own: in Aelios every resident has its own identity and remembers for itself.
 
 ### It comes to you
 
@@ -91,7 +91,7 @@ Set up and configure Aelios-resident for me (an AI companion that lives in my Cl
 
 ### Set it up yourself in the dashboard
 
-You need a Cloudflare account (the free plan is enough). For long-term memory, also have an Aelios already deployed. Telegram and WeCom are both optional and both set up on the settings page: without Telegram, skip step 1; WeCom is set up afterwards, see [WeCom (WeChat)](#wecom-wechat).
+You need a Cloudflare account (the free plan is enough) and an [Aelios](https://github.com/Aelios-project/Aelios) already deployed. The resident does not work without Aelios; if you have none yet, set one up first with its own guide. Telegram and WeCom are both optional and both set up on the settings page: without Telegram, skip step 1; WeCom is set up afterwards, see [WeCom (WeChat)](#wecom-wechat).
 
 1. **Create the bot** (Telegram only): in Telegram, message @BotFather, send `/newbot`, choose a name and note the token.
 2. **Deploy**: Cloudflare dashboard → Workers & Pages → Create → Import a repository, and pick this repository (or your fork). Name the project `aelios-resident`, the same as `name` in `wrangler.jsonc`, and keep the other defaults. From then on, every push to main updates it.
@@ -125,7 +125,7 @@ WeCom (optional) ──▶ Worker (signature, decrypt, allowlist) ────�
               replies to WeCom ──▶ relay on a machine with a fixed IP ──▶ WeCom API
 ```
 
-- With Aelios connected, every turn goes through Aelios' model endpoint, which adds related memories and records the turn.
+- Every turn goes through Aelios' model endpoint, which adds related memories and records the turn.
 - WeCom only takes API calls from fixed IPs, so replies to WeCom go out through a small relay on a machine of yours (see [WeCom (WeChat)](#wecom-wechat)). Telegram and the web door need nothing else.
 - 55 minutes after you go quiet: if the chat is long enough, it writes a handoff letter; if not, the heartbeat asks whether it wants to reach out.
 
@@ -271,7 +271,7 @@ With Aelios connected, the chat goes through Aelios' own model endpoint (`https:
 - Letters, check-ins and the trial call when switching models are not your words; they are marked as such, so Aelios does not record them as yours.
 - After a turn that searched the web, it picks up to 3 facts that will still hold in a few months and saves them as world knowledge in Aelios, so it need not search again. To turn this off, switch off 「搜到的知识存进 Aelios」 (`WEB_LEARN`).
 
-Without Aelios it still works, but it remembers only the current conversation and its letters.
+Aelios-resident is made for Aelios and needs it to work. If you do not want Aelios as your memory store, there are plenty of personal agents without one, and one of those will suit you better.
 
 ### Handoff letters
 

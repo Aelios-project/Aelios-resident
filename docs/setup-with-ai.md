@@ -12,9 +12,9 @@
 - 想要的话，一个 Telegram bot，私聊它就是在跟住户说话，网页门在 Telegram 里也能当 Mini App 打开；
 - 想要的话，企业微信（开了微信插件，微信里也能聊）。要一台有固定 IP 的 Linux 机器当转发机；
 - 不管从哪扇门聊，都是同一段对话；
-- 接了 Aelios 的话，它记得以前的事，跟你在别处用 Aelios 的 AI 用同一份记忆。
+- 它接在 Aelios 上，记得以前的事，跟你在别处用 Aelios 的 AI 用同一份记忆。
 
-你要准备的：一个 Cloudflare 账号（免费的就够）；要 Telegram 的，一个 Telegram 账号。想要长期记忆的话，再要一个 Aelios，没有也没关系，AI 会先帮你装。想用 Claude 聊的话，要一把 Anthropic 的 API key；什么 key 都没有也能先用免费的默认模型聊。
+你要准备的：一个 Cloudflare 账号（免费的就够）；要 Telegram 的，一个 Telegram 账号。还要一个 Aelios：住户一定要接 Aelios 才能用。没有也没关系，AI 会先帮你装。想用 Claude 聊的话，要一把 Anthropic 的 API key；什么 key 都没有也能先用免费的默认模型聊。
 
 你自己要动手的只有这几件：在浏览器里点「允许」，让 AI 登录 Cloudflare；要 Telegram 的，在 Telegram 里找 @BotFather 建一个 bot，把 bot 的 token 填进住户的网页设置页，token 不经过 AI。用自己的模型 key 的话，key 也是你自己存进 Cloudflare 后台。其余的，包括部署、生成钥匙、接 Telegram、接 Aelios、选模型、填设置，都交给 AI。
 

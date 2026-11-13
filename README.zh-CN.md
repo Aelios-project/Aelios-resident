@@ -37,9 +37,9 @@ Aelios-resident 是一个家，你的每一个 AI 都是住在里面的住户。
 
 ### 它记得你
 
-- 接上 [Aelios](https://github.com/wusaki0723/Aelios)（你自己部署的记忆服务）后，你每说一句，它都会想起相关的旧事，再把这一轮记下来。几个月前你提过的猫叫什么，你在为什么努力，你不爱吃什么，它都知道。
+- 它建在 [Aelios](https://github.com/Aelios-project/Aelios)（你自己部署的记忆服务）上：你每说一句，它都会想起相关的旧事，再把这一轮记下来。几个月前你提过的猫叫什么，你在为什么努力，你不爱吃什么，它都知道。
 - 聊久了，它给之后的自己写交接信，把旧聊天收好，只留最近一段原文。第二天接着聊，话头不断。
-- 每个住户的记忆是它自己的：接了 Aelios 时，一个住户一个身份，各记各的。
+- 每个住户的记忆是它自己的：在 Aelios 里一个住户一个身份，各记各的。
 
 ### 它会来找你
 
@@ -89,7 +89,7 @@ Aelios-resident 是一个家，你的每一个 AI 都是住在里面的住户。
 
 ### 自己在后台点着装
 
-要准备：一个 Cloudflare 账号（免费档就行）。想要长期记忆的话，再准备一个已经部署好的 Aelios。Telegram 和企业微信都是选装的，都在设置页里接：不要 Telegram 就跳过第 1 步；企业微信装好以后再接，见「企业微信」。
+要准备：一个 Cloudflare 账号（免费档就行），和一个已经部署好的 [Aelios](https://github.com/Aelios-project/Aelios)。住户一定要接 Aelios 才能用，还没有的话先照 Aelios 的说明装一个。Telegram 和企业微信都是选装的，都在设置页里接：不要 Telegram 就跳过第 1 步；企业微信装好以后再接，见「企业微信」。
 
 1. **建 bot**（只有 Telegram 要）：在 Telegram 里找 @BotFather，发 `/newbot`，起好名字，记下 token。
 2. **部署**：Cloudflare 后台 → Workers & Pages → Create → Import a repository，选这个仓库（或者你 fork 的）。项目名填 `aelios-resident`，要跟 `wrangler.jsonc` 里的 `name` 一样，其余用默认。以后推到 main 就自动更新。
@@ -123,7 +123,7 @@ Telegram（选装）──▶ Worker（验 secret、白名单、命令）──�
              回企业微信的消息 ──▶ 有固定 IP 的转发机 ──▶ 企业微信接口
 ```
 
-- 接了 Aelios 时，每一轮都经过 Aelios 的模型接口，由它补上相关的旧事并记下这一轮。
+- 每一轮都经过 Aelios 的模型接口，由它补上相关的旧事并记下这一轮。
 - 企业微信只认固定 IP 发来的接口调用，所以回企业微信的消息要经过你自己一台机器上的小转发机（见「企业微信」）。Telegram 和网页门不用别的东西。
 - 你停下来 55 分钟后：聊天够长就写交接信；还不够长就走心跳，问它要不要找你。
 
@@ -269,7 +269,7 @@ Telegram（选装）──▶ Worker（验 secret、白名单、命令）──�
 - 交接信、定时找你、换模型时的试调都不是你说的话，会标出来，Aelios 不会当成你说的记。
 - 搜过网的那一轮回完以后，它挑出最多 3 条过几个月还成立的知识，存成 Aelios 的世界知识，下次不用再搜。不想要就把「搜到的知识存进 Aelios」关掉（`WEB_LEARN`）。
 
-不接 Aelios 也能用，只是它只记得当前对话和交接信。
+Aelios-resident 是为 Aelios 做的，一定要接 Aelios 才能用。不打算用 Aelios 当记忆库的话，外面不带记忆库的个人 agent 有很多，选一个别的会更合适。
 
 ### 交接信
 
