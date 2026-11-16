@@ -13,7 +13,7 @@ runner's bearer token and returns:
 {
   "ok": true,
   "protocol": "aelios-runner/1",
-  "accepts": ["heartbeat.engine", "receipt.ahead", "reason.refused", "reason.token_limit", "reason.no_result"],
+  "accepts": ["heartbeat.engine", "receipt.ahead", "reason.refused", "reason.token_limit", "reason.no_result", "ask.kind", "job.model", "job.grant"],
   "limits": { "summary": 4000 }
 }
 ```
@@ -97,6 +97,43 @@ resolve and ask expiration behavior is unchanged.
 A helper that has stopped because of refusal, a token limit or no result sends
 a failed final with the appropriate advertised reason, not a `problem` ask.
 
-Verification: `npm run typecheck`, `node test/machine-ask-kind.mjs`,
+### `job.grant`
+
+A runner holds a permission request for the owner only for a short while. When
+nobody answers in time, the turn ends `needs_you` with a `permission` ask, and
+the machine moves on to other work. With `job.grant` in `accepts`, that ask may
+carry a one-time grant id, `ask.grant`: `g_` and 10 lowercase hex digits. The
+runner keeps what the grant covers (the requests that ran out of time on that
+thread); the resident never sees or judges the action itself.
+
+```json
+{
+  "type": "final",
+  "status": "needs_you",
+  "ask": { "key": "perm:…", "kind": "permission", "grant": "g_0123456789", "question": "The helper wanted to …" }
+}
+```
+
+A grant on an ask without `kind: "permission"`, or one that is not well formed,
+returns 400 `INVALID_RECEIPT` before anything is stored. The grant is part of
+the receipt's replay fingerprint. The resident keeps it with the open ask and
+never shows it to the page, the waiting list or the model.
+
+When the owner taps 允许 on that card, the resident sends a `say` to the same
+thread whose text tells the helper the action was allowed and to run it again
+unchanged, with the grant as a top-level `grant` field on the work:
+
+```json
+{ "workId": "w_…", "token": "wt_…", "thread": "t_…", "kind": "say", "interrupt": true, "text": "允许。…", "grant": "g_0123456789" }
+```
+
+Only her 允许 on the card adds it: 拒绝, her own words in the thread, the
+resident's follow-ups and `cancel` never carry one. The runner redeems a grant
+at most once, for a request that matches what it covered; anything else is held
+as usual. An older runner ignores the field and holds the request again, as
+before. Answering a request while it is still held (the live Allow / Deny
+item, `/permission`) is unchanged.
+
+Verification: `npm run typecheck`, `node test/machine-ask-kind.mjs`, `node test/machine-grant.mjs`,
 `node test/machine.mjs`, `node test/waiting.mjs`, `node test/machine-perms.mjs`,
 and `node test/web-ui.mjs`.

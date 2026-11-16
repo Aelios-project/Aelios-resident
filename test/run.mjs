@@ -25,7 +25,8 @@
 //            through the fake relay, a relay without --media, a wrong relay key, out-of-turn messages
 //   web      the web page's own ways to talk: pictures, a quote, a voice message recorded there and replies said back,
 //            a sticker, the command buttons, a model change in the chat, its name and avatar, notifications, moving an
-//            alarm, answering a thread that needs her, searching the conversation, taking back its latest reply
+//            alarm, answering a thread that needs her, searching the conversation, taking back its latest reply, messages
+//            sent in a row answered as one turn
 //   stall    a model that goes quiet: the turn is cut and run again, and the messages after it are answered
 //            (start wrangler with --var CHAT_STALL_SECONDS:2)
 //   telegram the bot token saved on the settings page instead of Cloudflare (start wrangler with
@@ -3206,6 +3207,18 @@ if (phase === "web") {
     assert.deepEqual(await take(all.at(-1).id), { status: 400, data: { error: "它还在说，等它说完" } });
     await slow;
     assert.equal((await web("/web/take-back", "wrong", { id: "x" })).status, 401);
+  });
+
+  await step("messages sent in a row are answered as one turn, each still its own line (web-burst.ts)", async () => {
+    const before = (await lines()).length;
+    const said = [];
+    for (const text of ["连发一", "连发二", "连发三"]) {
+      said.push(say({ text }));
+      await sleep(300); // DEBOUNCE_SECONDS is 1 in wrangler.test.jsonc
+    }
+    assert.deepEqual(await Promise.all(said), [{ status: "completed" }, { status: "completed" }, { status: "completed" }]);
+    const added = (await lines()).slice(before);
+    assert.deepEqual(added.map((line) => [line.role, line.text]), [["user", "连发一"], ["user", "连发二"], ["user", "连发三"], ["assistant", "这一轮收到 3 条：连发一 / 连发二 / 连发三"]]);
   });
 }
 

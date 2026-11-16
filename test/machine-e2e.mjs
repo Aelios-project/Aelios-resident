@@ -6,7 +6,8 @@
 // Needs the Worker and the mock server, like test/run.mjs (a fresh Worker: delete .wrangler/state first):
 //   node test/mock-server.mjs & NO_PROXY=127.0.0.1 npx wrangler dev --config wrangler.test.jsonc --port 8787 &
 //   NO_PROXY=127.0.0.1 node test/machine-e2e.mjs
-// The runner is fetched at RUNNER_COMMIT from Aelios-desktop. To use a local copy: RUNNER_DIR=/path/to/Aelios-desktop/packages/runner.
+// The runner is fetched at RUNNER_COMMIT from Aelios-desktop, with its one dependency (acpx). To use a local copy:
+// RUNNER_DIR=/path/to/Aelios-desktop/packages/runner (run `npm ci` in Aelios-desktop first).
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -16,8 +17,8 @@ import path from "node:path";
 const WORKER = "http://127.0.0.1:8787";
 const KEY = "test-web-key";
 const RUNNER_REPO = "https://github.com/Aelios-project/Aelios-desktop.git";
-// Pinned to the runner that sends progress steps (PROTOCOL.md, progress), on Aelios-desktop main. A normal merge keeps this commit in main's history, so the pin stays valid.
-const RUNNER_COMMIT = "9e2c009dc9f834d9ac4ca18073aacb46fd4bf470";
+// Pinned to Aelios-desktop main after acpx became the runner's only engine (#44). A normal merge keeps this commit in main's history, so the pin stays valid.
+const RUNNER_COMMIT = "e8f9ed6feb70872d90dfca374e0c0c20a7ca1024";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const web = async (route, body) => {
   const response = await fetch(`${WORKER}${route}`, { method: body ? "POST" : "GET", headers: { "x-web-key": KEY, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -48,6 +49,7 @@ if (!runnerDir) {
   git("init", "-q");
   git("fetch", "-q", "--depth", "1", RUNNER_REPO, RUNNER_COMMIT);
   git("checkout", "-q", "FETCH_HEAD");
+  execFileSync("npm", ["ci", "--ignore-scripts", "--workspace", "aelios-runner"], { cwd: repo, stdio: "ignore" });
   runnerDir = path.join(repo, "packages", "runner");
 }
 const RUNNER = path.join(runnerDir, "bin", "aelios-runner.mjs");
@@ -81,7 +83,8 @@ try {
     assert.match(data.code, /^pc_[0-9a-f]{20}$/);
     execFileSync(process.execPath, [RUNNER, "pair", "--code", data.code, "--url", WORKER, "--workspace", path.join(home, "work"), "--access", "edit", "--plugin", "command", "--command", JSON.stringify([AGENT, "acp"])], { env });
     const config = path.join(home, "runner", "config.json");
-    writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), pollMs: 200, heartbeatMs: 500 }));
+    // The helper gets only an allowlisted environment (the runner's env-allow.mjs): its store goes through the config.
+    writeFileSync(config, JSON.stringify({ ...JSON.parse(readFileSync(config, "utf8")), pollMs: 200, heartbeatMs: 500, env: { FAKE_STORE: store } }));
     const shown = (await web("/web/runner")).data.machine;
     assert.equal(shown.online, false);
     // Offline: the resident is told at once, nothing waits in a queue.

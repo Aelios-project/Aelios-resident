@@ -6,6 +6,8 @@
 
 回执里 `askKind: "permission"` 的 ask 也会出现在聊天里。它没有活着的权限编号，所以允许和拒绝走 `/web/task/choose`，带原来那张单子的 id，文字是「允许」或「拒绝」。
 
+机器扣住一个请求只等一小会儿（runner 自己的设置），没人答就让那一轮先收工，去干别的线程的活，这一轮以「等你批准」结束。新的 runner 会在这张卡上带一张一次性通行证（`ask.grant`，见 `PROTOCOL.md` 的 `job.grant`）。你点「允许」时，住户往那条线程发一句「允许。……原样再做一次」，带上这张通行证，runner 对同一个动作放行一次，不再扣住问你第二遍。通行证只存在住户里，页面、「等你」列表和模型都看不到；「拒绝」、你在线程里自己打的字、住户接着派的单子都不带。旧的 runner 不发通行证，点「允许」就跟以前一样，会再问一遍。
+
 活着的权限请求，两边都用现有的、要认证的接口回答：
 
 ```http
@@ -25,6 +27,7 @@ Content-Type: application/json
 npm run typecheck
 node test/chat-permissions.mjs
 node test/machine-perms.mjs
+node test/machine-grant.mjs
 node test/waiting.mjs
 node test/web-ui.mjs
 ```
@@ -37,4 +40,4 @@ node test/web-ui.mjs
 NO_PROXY=127.0.0.1,localhost WORKER_URL=http://127.0.0.1:18813 node test/chat-permissions-worker.mjs
 ```
 
-它配对一个假 runner，检查扣住的请求、允许和拒绝、runner 轮询拿到答案、桌面上关掉。不测浏览器推送，也不测真手机。
+它配对一个假 runner，检查扣住的请求、允许和拒绝、runner 轮询拿到答案、桌面上关掉，以及超时后的「等你批准」点允许时带上通行证、点拒绝不带。不测浏览器推送，也不测真手机。

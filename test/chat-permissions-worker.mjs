@@ -37,3 +37,23 @@ console.log('PASS Allow and Deny in Waiting remove the main-chat card and reach 
 await call('/runner/v1/permission', { workId: work.workId, token: work.token, id: 'p_0123456789', state: 'closed' }, token);
 assert.deepEqual((await call('/web/messages')).permissions, []);
 console.log('PASS a desktop close removes the main-chat card');
+// A held request that ran out of time ends the turn with an approval ask that offers a one-time grant (machine-grant.ts).
+await call('/runner/v1/heartbeat', {}, token);
+await call('/runner/v1/receipt', { receiptId: work.workId + ':final', workId: work.workId, token: work.token, type: 'final', status: 'needs_you', summary: 'Held and not answered.', ask: { key: 'perm:grant', kind: 'permission', grant: 'g_0123456789', question: 'The helper wanted to run example --check.' } }, token);
+const asked = (await call('/web/messages')).permissions.find((item) => item.kind === 'ask' && item.askKind === 'permission');
+assert.ok(asked, 'the approval ask shows in the chat');
+assert.ok(!JSON.stringify(await call('/web/messages')).includes('g_0123456789'), 'the page never sees the grant');
+await call('/web/task/choose', { id: asked.task, text: '允许' });
+const followed = (await call('/runner/v1/poll', { claimKey: 'ck_bbbbbbbb' }, token)).work;
+assert.equal(followed.kind, 'say');
+assert.equal(followed.grant, 'g_0123456789', 'her 允许 carries the grant to the runner');
+assert.match(followed.text, /^允许。.*same action again/);
+assert.deepEqual((await call('/web/messages')).permissions, [], 'the card is gone once she answered');
+console.log('PASS 允许 on an approval that ran out of time sends a follow-up with the one-time grant');
+await call('/runner/v1/receipt', { receiptId: followed.workId + ':final', workId: followed.workId, token: followed.token, type: 'final', status: 'needs_you', summary: 'Held again.', ask: { key: 'perm:grant2', kind: 'permission', grant: 'g_abcdefabcd', question: 'The helper wanted to run example --fix.' } }, token);
+const denied = (await call('/web/messages')).permissions.find((item) => item.kind === 'ask');
+await call('/web/task/choose', { id: denied.task, text: '拒绝' });
+const refused = (await call('/runner/v1/poll', { claimKey: 'ck_cccccccc' }, token)).work;
+assert.equal(refused.text, '拒绝');
+assert.equal(Object.hasOwn(refused, 'grant'), false, '拒绝 never carries a grant');
+console.log('PASS 拒绝 sends no grant');
