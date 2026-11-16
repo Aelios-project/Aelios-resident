@@ -179,7 +179,7 @@ export function aeliosModel(
   // Gemini's OpenAI-compatible responses carry signed tool calls in extra_content.
   // The compatible adapter preserves those signatures as per-call provider metadata.
   if (/(?:^|\/)gemini(?:-|$)/i.test(name)) {
-    return createOpenAICompatible({ baseURL, apiKey: memory.key, name: "google", fetch }).chatModel(name);
+    return createOpenAICompatible({ baseURL, apiKey: memory.key, name: "google", fetch, includeUsage: true }).chatModel(name);
   }
   return createOpenAI({ baseURL, apiKey: memory.key, name: "aelios", fetch }).chat(name);
 }
