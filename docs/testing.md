@@ -63,6 +63,7 @@ NO_PROXY=127.0.0.1 node test/run.mjs main
 | `letter-state.mjs` | SQLite 写信状态与 outbox 持久化、事务、claim/崩溃租约、六次预算与退避、目标绑定及手动重试 |
 | `letter-delivery.mjs` | 发送凭据校验、安全错误、网络异常、目标与 key 轮换、用户状态文案 |
 | `via-aelios.mjs` | 从 Aelios 过的规矩，以及 Aelios 的模型清单怎么读（`modelsOf`、`listModels`）；重回的那条带自己的请求号去 Aelios |
+| `gemini-signatures.mjs` | Real AI SDK adapters with synthetic HTTP: streamed and non-streamed Gemini tool signatures, three parallel calls, continued text, JSON history round-trip through Agents' message builder and `convertToModelMessages`, and unchanged non-Gemini routing. No network or credentials. |
 | `persona-edit.mjs` | 住户自己改人设（`src/persona-edit.ts`）：加在末尾（空一行）、换掉一段、删掉一段，别的一字不动；找不到、出现不止一次、改完是空的、超过 30000 字、带「Claude Code」的都不改；改了才存、一样的不存，写交接信那一轮不改；说明里没有关于思考的话 |
 | `take-back.mjs` | 收回最后一条回复要拿掉哪些：整条回复（分几条存的一起），后面它跳过的心跳一起；后面有她的话、有它主动说的话就不是最后一条；她的话、交接信收不回；回心跳、线程交回和群聊交来的只能删不能重回 |
 | `chat-stop.mjs` | 停下住户正在回的话（`src/chat-stop.ts`、`public/chat-stop.js`）：只停当前这一轮，带了过期的 `requestId` 不停新的一轮（409）；连点只叫停一次；停下那一轮的钩子来晚了清不掉新的一轮；删掉的只有那一条没回完的话；页面上被停下的发送和「重新回答」不算失败；没在回话时按钮藏起来。`chat-stop-worker.mjs` 要起本地 Worker（`WORKER_URL` 指过去）：认证和正文检查、回到一半时停、停下后历史里没有半截话、下一轮照常、在慢的记忆工具中途停 |
