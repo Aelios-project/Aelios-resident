@@ -250,6 +250,11 @@ function decide(options: LanguageModelV4CallOptions): { text: string; delayMs?: 
   if (said.includes("接上MCP")) return { tool: "connect_mcp_server", input: { url: "http://127.0.0.1:9999/ext2/mcp", name: "second" } };
   if (said.includes("断开MCP")) return { tool: "disconnect_mcp_server", input: { name: "second" } };
   if (said.includes("用授权MCP")) return { tool: "mcp_oauth_add", input: { a: 1, b: 2 } };
+  // Messages from the web page in a row (web-burst.ts): how many of hers this one turn answers, in order.
+  if (said.includes("连发")) {
+    const hers = prompt.slice(prompt.findLastIndex((m) => m.role === "assistant") + 1).filter((m) => m.role === "user");
+    return { text: `这一轮收到 ${hers.length} 条：${hers.map((m) => textOf(m.content).replace(/^\[[^\]]+\]\s*/, "")).join(" / ")}` };
+  }
   if (said.includes("用MCP")) return { tool: "mcp_demo_echo", input: { text: "hi", title: "t" } };
   // Which tools it was given: name, description length and parameters, for the tests to read.
   if (said.includes("MCP工具有哪些")) {

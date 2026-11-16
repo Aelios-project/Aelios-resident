@@ -5,6 +5,7 @@
 // machine's own settings: nothing here can choose them.
 import type { Sql } from "./sticker-store";
 import { askKindFields, initAskKind, validAskKind, type AskKind } from "./machine-ask-kind";
+import { initGrant, validGrant } from "./machine-grant";
 import { MachineJobModels, requestedModelLabel } from "./machine-job-model";
 import type { MachinePick } from "./role-model";
 import { progressOf, StepStore, type Step } from "./thread-steps";
@@ -40,15 +41,17 @@ export const FAIL_REASONS = ["permission_denied", "needs_login", "missing_key", 
  * What this resident takes beyond the first version of the protocol, named on every heartbeat's answer. A runner sends a
  * newer field or reason only when its name is here, so an older resident never gets something it refuses with a 400.
  */
-export const ACCEPTS = ["heartbeat.engine", "receipt.ahead", "reason.refused", "reason.token_limit", "reason.no_result", "ask.kind", "job.model"] as const;
+export const ACCEPTS = ["heartbeat.engine", "receipt.ahead", "reason.refused", "reason.token_limit", "reason.no_result", "ask.kind", "job.model", "job.grant"] as const;
 /** How many places ahead of a queued turn a `queued` receipt may say. */
 const AHEAD_MAX = 99;
 
 type Machine = { id: string; token_hash: string; label: string; created_at: number; last_seen_at: number | null; revoked_at: number | null; plugin: string; engine: string };
-type Work = { work_id: string; machine_id: string; token: string; task_id: string; thread: string; kind: WorkKind; text: string; state: string; claim_key: string; lease_until: number | null; created_at: number; files: string };
+type Work = { work_id: string; machine_id: string; token: string; task_id: string; thread: string; kind: WorkKind; text: string; state: string; claim_key: string; lease_until: number | null; created_at: number; files: string; grant_id: string };
 type Status = "done" | "failed" | "needs_you" | "cancelled";
 export type Ask = { kind?: AskKind; key: string; question: string; options: string[]; recommend: string };
-type Receipt = { receiptId: string; workId: string; token: string; type: "started" | "queued" | "final"; sessionId: string; status?: Status; summary?: string; reason?: string; ask?: Ask; notice?: { text: string; fyi: boolean }; resolve: string[]; ahead?: number };
+/** A receipt's ask can also offer a one-time grant (machine-grant.ts); it stays here and is never shown. */
+type ReceiptAsk = Ask & { grant?: string };
+type Receipt = { receiptId: string; workId: string; token: string; type: "started" | "queued" | "final"; sessionId: string; status?: Status; summary?: string; reason?: string; ask?: ReceiptAsk; notice?: { text: string; fyi: boolean }; resolve: string[]; ahead?: number };
 
 export class MachineError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) { super(message); }
@@ -136,6 +139,7 @@ function receiptOf(input: unknown): Receipt {
     const ask = object(body.ask);
     const kind = ask.kind;
     if (!validAskKind(kind)) return fail(400, "INVALID_RECEIPT", "ask.kind is permission or question when supplied");
+    if (!validGrant(ask.grant, kind)) return fail(400, "INVALID_RECEIPT", "ask.grant is g_ and 10 hex digits, on a permission ask only");
     const options = Array.isArray(ask.options) ? ask.options : [];
     if (typeof ask.key !== "string" || !KEY.test(ask.key) || typeof ask.question !== "string" || !ask.question.trim()) fail(400, "INVALID_RECEIPT", "ask needs a key and a question");
     receipt.ask = {
@@ -143,7 +147,8 @@ function receiptOf(input: unknown): Receipt {
       key: ask.key as string,
       question: text(ask.question, SUMMARY_MAX),
       options: [...new Set(options.map((option) => text(option, 40)).filter(Boolean))].slice(0, OPTIONS_MAX),
-      recommend: text(ask.recommend, 40)
+      recommend: text(ask.recommend, 40),
+      ...(ask.grant === undefined ? {} : { grant: ask.grant as string })
     };
   }
   if (receipt.status === "needs_you" && !receipt.ask) fail(400, "INVALID_RECEIPT", "needs_you comes with an ask");
@@ -184,6 +189,7 @@ export class MachineStore {
     sql`CREATE TABLE IF NOT EXISTS res_machine_asks (thread TEXT NOT NULL, key TEXT NOT NULL, task_id TEXT NOT NULL, question TEXT NOT NULL,
       options TEXT NOT NULL, recommend TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (thread, key))`;
     initAskKind(sql);
+    initGrant(sql);
     // What a thread told them without needing an answer (the receipt's notice), one per work.
     sql`CREATE TABLE IF NOT EXISTS res_machine_notes (work_id TEXT PRIMARY KEY, thread TEXT NOT NULL, task_id TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL)`;
     this.steps = new StepStore(quiet);
@@ -247,7 +253,7 @@ export class MachineStore {
   }
 
   /** Puts a message for a thread in line. Refused when there is no machine, or it is not online right now. */
-  enqueue(task: Task, kind: WorkKind, body: string, files: Attachment[] = [], role: MachinePick | null = null): void {
+  enqueue(task: Task, kind: WorkKind, body: string, files: Attachment[] = [], role: MachinePick | null = null, grant = ""): void {
     // The runner refuses a work with more attachments than this as malformed, so it is never sent.
     if (files.length > ATTACH_MAX_THREAD) fail(400, "TOO_MANY_ATTACHMENTS", `图片和文件一次最多一共 ${ATTACH_MAX_THREAD} 个`);
     this.atomic(() => {
@@ -267,8 +273,9 @@ export class MachineStore {
       this.sql`DELETE FROM res_machine_notes WHERE work_id NOT IN (SELECT work_id FROM res_machine_work)`;
       this.models.prune();
       const workId = `w_${hex(8)}`;
-      this.sql`INSERT INTO res_machine_work VALUES (${workId}, ${machine!.id}, ${`wt_${hex(16)}`}, ${task.id}, ${task.root}, ${kind}, ${body},
-        ${"queued"}, ${""}, ${null}, ${Date.now()}, ${JSON.stringify(files)})`;
+      this.sql`INSERT INTO res_machine_work (work_id, machine_id, token, task_id, thread, kind, text, state, claim_key, lease_until, created_at, files, grant_id)
+        VALUES (${workId}, ${machine!.id}, ${`wt_${hex(16)}`}, ${task.id}, ${task.root}, ${kind}, ${body}, ${"queued"}, ${""}, ${null}, ${Date.now()},
+        ${JSON.stringify(files)}, ${kind === "cancel" ? "" : grant})`;
       if (kind !== "cancel") this.models.set(workId, role);
       // Their own words go in at once; a job or a follow-up behind unfinished work waits its turn, and its card says so from now.
       if (busy > 0 && (kind === "job" || kind === "mail")) this.tasks.progress(task.id, QUEUED_LINE, true);
@@ -420,9 +427,9 @@ export class MachineStore {
     }
     // An ask is kept until a later receipt resolves it; the waiting list reads it.
     if (receipt.ask) {
-      this.sql`INSERT INTO res_machine_asks (thread, key, task_id, question, options, recommend, at, kind) VALUES (${work.thread}, ${receipt.ask.key}, ${work.task_id}, ${receipt.ask.question}, ${JSON.stringify(receipt.ask.options)},
-        ${receipt.ask.recommend}, ${Date.now()}, ${receipt.ask.kind ?? ""}) ON CONFLICT(thread, key) DO UPDATE SET task_id = excluded.task_id, question = excluded.question,
-        options = excluded.options, recommend = excluded.recommend, at = excluded.at, kind = excluded.kind`;
+      this.sql`INSERT INTO res_machine_asks (thread, key, task_id, question, options, recommend, at, kind, grant_id) VALUES (${work.thread}, ${receipt.ask.key}, ${work.task_id}, ${receipt.ask.question}, ${JSON.stringify(receipt.ask.options)},
+        ${receipt.ask.recommend}, ${Date.now()}, ${receipt.ask.kind ?? ""}, ${receipt.ask.grant ?? ""}) ON CONFLICT(thread, key) DO UPDATE SET task_id = excluded.task_id, question = excluded.question,
+        options = excluded.options, recommend = excluded.recommend, at = excluded.at, kind = excluded.kind, grant_id = excluded.grant_id`;
     }
     for (const key of receipt.resolve) {
       const [open] = this.sql<{ task_id: string }>`SELECT task_id FROM res_machine_asks WHERE thread = ${work.thread} AND key = ${key}`;
@@ -492,6 +499,11 @@ export class MachineStore {
         (SELECT 1 FROM res_machine_work w WHERE w.task_id = t.id) LIMIT 1`.length > 0;
   }
 
+  /** The one-time grant the open approval ask of `task` offers, or "" (machine-grant.ts). */
+  grantFor(thread: string, task: string): string {
+    return this.sql<{ grant_id: string }>`SELECT grant_id FROM res_machine_asks WHERE thread = ${thread} AND task_id = ${task} AND kind = 'permission' AND grant_id != '' ORDER BY at DESC LIMIT 1`[0]?.grant_id ?? "";
+  }
+
   /** Whether `task` of `thread` has an open ask. */
   asked(thread: string, task: string): boolean {
     return this.sql`SELECT 1 FROM res_machine_asks WHERE thread = ${thread} AND task_id = ${task}`.length > 0;
@@ -510,7 +522,7 @@ export class MachineStore {
 
   #shown(work: Work) {
     const title = this.tasks.get(work.task_id)?.title ?? "";
-    return { workId: work.work_id, token: work.token, thread: work.thread, kind: work.kind, title, ...this.models.get(work.work_id), ...(work.kind === "cancel" ? {} : { text: work.text }), ...(work.kind === "say" ? { interrupt: true } : {}), ...(work.files && work.files !== "[]" ? { attachments: JSON.parse(work.files) as Attachment[] } : {}) };
+    return { workId: work.work_id, token: work.token, thread: work.thread, kind: work.kind, title, ...this.models.get(work.work_id), ...(work.kind === "cancel" ? {} : { text: work.text }), ...(work.kind === "say" ? { interrupt: true } : {}), ...(work.files && work.files !== "[]" ? { attachments: JSON.parse(work.files) as Attachment[] } : {}), ...(work.grant_id ? { grant: work.grant_id } : {}) };
   }
 }
 

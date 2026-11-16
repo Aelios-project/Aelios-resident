@@ -148,6 +148,7 @@ import { WaitingStore } from "./waiting-store";
 import { chatPermissions } from "./chat-permissions";
 import { carryOver, markTakenOver, stillTakeable, unfinishedWithTitle } from "./takeover";
 import { MachineError, MachineStore, machineHelper, machineRecord, machineReply, type Ask, type Finished, type WorkKind } from "./machine";
+import { GRANTED_TEXT } from "./machine-grant";
 import { wakesResident } from "./machine-wake";
 import { ATTACH_MARK, ATTACH_MAX_FILES, keep, loadAll, loadFile, markedFile, type Attachment } from "./attachments";
 import { chatLine, openFileTools, summarize } from "./file-summary";
@@ -208,6 +209,7 @@ import { searchEngines, searchSource } from "./web/search";
 import { MEMORY_HEADER, aeliosModel, listModels, onMessages, type AeliosModel, type Thinking } from "./via-aelios";
 import { effortOf } from "./thinking";
 import { takeBack } from "./take-back";
+import { WebBurst } from "./web-burst";
 import { activityOf, WebDraft, type Activity } from "./web/history";
 import { ChatStop, type ChatTurn, type StopResult } from "./chat-stop";
 import { GROUPS_MAX, GROUP_HEAD, GROUP_PICTURES_MAX, GROUP_TEXT_MAX, GroupStore, HER, afterTurn, cleanReply, groupConfigFrom, groupHeard, membersOf, named, speakersFor, type Group, type GroupLine, type GroupSticker, type Member } from "./group";
@@ -1682,7 +1684,7 @@ export class Resident extends Think<Env> {
   }
 
   /** Adds a task and either starts it on a thread here or on GitHub Actions; sets a quiet check too. */
-  private async startTask(input: NewTask, follows: Task | null, files: Attachment[] = []): Promise<Task | { error: string }> {
+  private async startTask(input: NewTask, follows: Task | null, files: Attachment[] = [], grant = ""): Promise<Task | { error: string }> {
     if (!this.cloudTasksOn()) return { error: "后台帮忙关着" };
     const routes = this.taskRoutes();
     // A follow-up stays where its thread ran, while that is still set up.
@@ -1699,7 +1701,7 @@ export class Resident extends Think<Env> {
       // Theirs goes in at once (the running turn stops); the resident's own follow-up waits its turn.
       const kind: WorkKind = input.direct ? "say" : follows ? "mail" : "job";
       try {
-        this.machines().enqueue(added.task, kind, input.job, files, this.taskRoles().get(added.task.role));
+        this.machines().enqueue(added.task, kind, input.job, files, this.taskRoles().get(added.task.role), grant);
       } catch (error) {
         store.drop(added.task.id);
         return { error: error instanceof Error ? error.message : String(error) };
@@ -2180,8 +2182,11 @@ export class Resident extends Think<Env> {
     return (await this.dynamicAgents.get(TaskWorker, threadName(root))).fileBytes(path);
   }
 
-  /** What they write to a thread here themselves: it goes to that thread as a task of its own, not to the resident. */
-  async webThreadSay(root: string, text: string, attached: { pictures?: unknown; files?: unknown } = {}): Promise<WebThread | { error: string }> {
+  /**
+   * What they write to a thread here themselves: it goes to that thread as a task of its own, not to the resident.
+   * `grant` is set only by her 允许 on an approval card (webChoose): the machine allows that one action once.
+   */
+  async webThreadSay(root: string, text: string, attached: { pictures?: unknown; files?: unknown } = {}, grant = ""): Promise<WebThread | { error: string }> {
     if (!this.cloudTasksOn()) return { error: "后台帮忙关着" };
     const tasks = this.cloudTasks().thread(root);
     const latest = tasks.at(-1);
@@ -2196,7 +2201,7 @@ export class Resident extends Think<Env> {
     const files = loaded.length ? keep(this.media(), loaded) : [];
     if ("error" in files) return files;
     // On the machine their words go straight to its session, stopping a running turn (machine.ts).
-    const started = await this.startTask({ title: tasks[0].title, job, repo: latest.repo, follows: latest.id, execution: latest.runs, direct: true }, latest, files);
+    const started = await this.startTask({ title: tasks[0].title, job, repo: latest.repo, follows: latest.id, execution: latest.runs, direct: true }, latest, files, grant);
     if ("error" in started) for (const file of files) this.media().remove(file.key);
     else if (latest.runs === "machine") this.machines().answered(root); // their words answer what the thread asked
     return "error" in started ? started : this.webThread(root);
@@ -4017,16 +4022,19 @@ export class Resident extends Think<Env> {
         }
       }
     }
-    const result = await this.saveMessages([
-      {
-        id: crypto.randomUUID(),
-        role: "user",
-        parts: [{ type: "text", text: `[${stamp(new Date(), this.tz)}] ${lead}${said}` }, ...pictures],
-        metadata
-      }
-    ]);
-    return { status: result.status };
+    // Answered together with what else she sends within DEBOUNCE_SECONDS, as on Telegram (web-burst.ts).
+    return this.#webBurst.add({
+      id: crypto.randomUUID(),
+      role: "user",
+      parts: [{ type: "text", text: `[${stamp(new Date(), this.tz)}] ${lead}${said}` }, ...pictures],
+      metadata
+    });
   }
+
+  #webBurst = new WebBurst(
+    async (take) => ({ status: (await this.saveMessages(async () => take())).status }),
+    () => num(this.env.DEBOUNCE_SECONDS, 3) * 1000
+  );
 
   /** While a reply asked for again runs: the id its calls go to Aelios with, so it is recorded as a new exchange. */
   #redo: string | null = null;
@@ -4036,7 +4044,7 @@ export class Resident extends Think<Env> {
    * anew, like a message she sent from there. Not while it is still replying.
    */
   async webTakeBack(id: string, again: boolean): Promise<{ status: string } | { error: string }> {
-    if (this.#draftActive?.() || this.letterJob()) return { error: "它还在说，等它说完" };
+    if (this.#draftActive?.() || this.letterJob() || this.#webBurst.waiting) return { error: "它还在说，等它说完" };
     const plan = takeBack(this.messages, id);
     if ("error" in plan) return plan;
     if (again && !plan.again) return { error: "这条不是回你的话，没法重新回" };
@@ -4320,8 +4328,10 @@ export class Resident extends Think<Env> {
     // A machine ask can still be open when its task is no longer the thread's newest, or when it lists no options.
     const open = task?.runs === "machine" && this.machines().asked(task.root, taskId);
     if (!task || (!store.choose(taskId, choice) && !open)) return { error: "这张卡已经不等你选了" };
+    // 允许 on an approval that ran out of time: the machine allows that same action once, without asking again.
+    const grant = open && choice === "允许" ? this.machines().grantFor(task.root, taskId) : "";
     if (task.runs === "local" || task.runs === "machine") {
-      const said = await this.webThreadSay(task.root, choice);
+      const said = await this.webThreadSay(task.root, grant ? GRANTED_TEXT : choice, {}, grant);
       if (!("error" in said)) return { ok: true };
     }
     const sent = await this.webSay({ text: `关于「${task.title}」：${choice}` });
