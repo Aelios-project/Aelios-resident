@@ -15,6 +15,7 @@
 
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
 import type { AeliosConfig } from "./aelios";
 import { withoutOldThinkingIn } from "./claude-run";
@@ -175,5 +176,10 @@ export function aeliosModel(
   const baseURL = aeliosBase(memory);
   if (onMessages(id)) return createAnthropic({ baseURL, apiKey: memory.key, fetch: sender(true, auxiliary, report, thinking, redo) })(name);
   const fetch = sender(false, auxiliary, report, undefined, redo, takesCompletionTokens(name));
+  // Gemini's OpenAI-compatible responses carry signed tool calls in extra_content.
+  // The compatible adapter preserves those signatures as per-call provider metadata.
+  if (/(?:^|\/)gemini(?:-|$)/i.test(name)) {
+    return createOpenAICompatible({ baseURL, apiKey: memory.key, name: "google", fetch, includeUsage: true }).chatModel(name);
+  }
   return createOpenAI({ baseURL, apiKey: memory.key, name: "aelios", fetch }).chat(name);
 }
