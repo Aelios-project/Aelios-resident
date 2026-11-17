@@ -205,6 +205,7 @@ import {
 import { DEFAULT_COMPRESS_MODEL, type Compressor } from "./web/compress";
 import { readerFor, webFetchTool, webFetchVia, type Page, type PageCache } from "./web/fetch";
 import { SiteKeyStore } from "./web/site-keys";
+import { httpRequestTool } from "./web/http-request";
 import { searchEngines, searchSource } from "./web/search";
 import { MEMORY_HEADER, aeliosModel, listModels, onMessages, type AeliosModel, type Thinking } from "./via-aelios";
 import { effortOf } from "./thinking";
@@ -1425,6 +1426,11 @@ export class Resident extends Think<Env> {
     return this.cfg.CLOUD_TASKS?.trim().toLowerCase() === "on";
   }
 
+  // http_request for threads here (web/http-request.ts): off unless they turn it on, and only with background help.
+  private threadHttpOn(): boolean {
+    return this.cloudTasksOn() && this.cfg.CLOUD_TASK_HTTP?.trim().toLowerCase() === "on";
+  }
+
   /** Their GitHub token, for the hands on GitHub Actions (hands-repo.ts); "" without one. */
   private githubToken(): string {
     return this.cloudTasksOn() ? (this.cfg.CLOUD_TASK_GITHUB_TOKEN?.trim() ?? "") : "";
@@ -1853,16 +1859,22 @@ export class Resident extends Think<Env> {
     const where = handedPath(path);
     if (!where) return { status: 400, body: { error: "the path must be relative, without dot files or .." } };
     if (!bytes.length) return { status: 400, body: { error: "the file is empty" } };
-    const sent = (await this.ctx.storage.get<{ files: number; bytes: number }>(`hands_files:${id}`)) ?? { files: 0, bytes: 0 };
+    const problem = await this.keepTaskFile(task, where, bytes);
+    return problem ? { status: 429, body: { error: problem } } : { status: 200, body: { ok: true } };
+  }
+
+  /** Keeps a file a task made among its thread's files, within the task's share; why not, when it cannot. */
+  private async keepTaskFile(task: Task, path: string, bytes: Uint8Array): Promise<string | null> {
+    const sent = (await this.ctx.storage.get<{ files: number; bytes: number }>(`hands_files:${task.id}`)) ?? { files: 0, bytes: 0 };
     if (sent.files >= HANDS_FILES || sent.bytes + bytes.length > HANDS_FILES_BYTES) {
-      return { status: 429, body: { error: `at most ${HANDS_FILES} files and ${HANDS_FILES_BYTES / 1024 / 1024} MB per task` } };
+      return `at most ${HANDS_FILES} files and ${HANDS_FILES_BYTES / 1024 / 1024} MB per task`;
     }
-    await this.ctx.storage.put(`hands_files:${id}`, { files: sent.files + 1, bytes: sent.bytes + bytes.length });
+    await this.ctx.storage.put(`hands_files:${task.id}`, { files: sent.files + 1, bytes: sent.bytes + bytes.length });
     const thread = await this.dynamicAgents.get(TaskWorker, threadName(task.root));
-    await thread.keepFile(where, bytes);
+    await thread.keepFile(path, bytes);
     // So find knows its name too.
     this.cloudTasks().noteFiles(task.root, await thread.listFiles());
-    return { status: 200, body: { ok: true } };
+    return null;
   }
 
   /** Keeps the newest tasks; a thread with no task left goes too, with its files. */
@@ -1873,7 +1885,7 @@ export class Resident extends Think<Env> {
     }
   }
 
-  /** Tools a thread here may use: search, web pages, memory, notebook, MCP, and reporting. Its files are its own. */
+  /** Tools a thread here may use: search, web pages, APIs when allowed, memory, notebook, MCP, and reporting. Its files are its own. */
   private localTaskTools(task: Task, code: string): ToolSet {
     const tools: ToolSet = {};
     const memory = aeliosConfig(this.cfg);
@@ -1887,6 +1899,7 @@ export class Resident extends Think<Env> {
       });
     }
     if (this.webFetchOn()) tools.web_fetch = webFetchTool(readerFor(this.cfg, this.compressor(), this.pageCache(), this.siteKeys().all()));
+    if (this.threadHttpOn()) tools.http_request = httpRequestTool(this.siteKeys().all(), (path, bytes) => this.keepTaskFile(task, path, bytes));
     Object.assign(tools, this.mcpTools());
     tools.report_progress = tool({
       description: "Send one short progress line in the job's language while you work.",

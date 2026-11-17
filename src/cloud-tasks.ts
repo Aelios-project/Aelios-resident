@@ -228,6 +228,11 @@ export function localStepProgress(toolName: string, input: unknown): string | nu
     const url = oneLine(args.url, 120);
     return url ? `正在读：${url}` : "正在读网页";
   }
+  if (toolName === "http_request") {
+    // Host and path only: what follows ? is not shown.
+    const url = oneLine(args.url, 200).split(/[?#]/)[0].replace(/^https?:\/\//, "").slice(0, 100);
+    return url ? `正在调接口：${url}` : "正在调接口";
+  }
   if (toolName === "memory_recall") {
     const query = oneLine(args.query, 80);
     return query ? `正在查记忆：${query}` : "正在查记忆";
