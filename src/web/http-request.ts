@@ -135,13 +135,11 @@ export async function present(answer: Answer, keys: readonly SiteKey[], save: Sa
   let text = answerText(answer, keys);
   // A JSON answer with files in it: each one saved under the answer's names, and its name in its place.
   const pulled = { saved: [] as string[], left: FILES_PER_ANSWER };
-  if (type.includes("json") || /^\s*[[{]/.test(text)) {
-    try {
-      const value = await pullFiles(JSON.parse(text), save, name, pulled);
-      if (pulled.saved.length) text = JSON.stringify(value);
-    } catch {
-      // Not JSON after all: it goes as text.
-    }
+  const json = type.includes("json") || /^\s*[[{]/.test(text) ? parsed(text) : undefined;
+  if (json !== undefined) {
+    // A save that fails throws, rather than the answer going on as if it held no files.
+    const value = await pullFiles(json, save, name, pulled);
+    if (pulled.saved.length) text = JSON.stringify(value);
   }
   const short = text.length <= MAX_CHARS;
   if (short && !(asked && !pulled.saved.length)) return `${head}\n${text}`;
@@ -299,6 +297,15 @@ export function namer(saveAs: string | undefined): ((ext: string) => string) | n
 }
 
 /** Saves the bytes under the next name; what to tell the model. */
+/** The JSON in a text; undefined when it is not JSON after all (it then goes as text). */
+function parsed(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
 async function saveBytes(save: SaveFile, name: (ext: string) => string, bytes: Uint8Array, type: string): Promise<string> {
   const wav = pcmAsWav(bytes, type);
   const kept = wav ?? bytes;

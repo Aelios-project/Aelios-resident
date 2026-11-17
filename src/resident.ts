@@ -1871,7 +1871,7 @@ export class Resident extends Think<Env> {
     return {
       load: (id) => this.ctx.storage.get<Wait>(`thread_wait:${id}`),
       store: (id, wait) => this.ctx.storage.put(`thread_wait:${id}`, wait),
-      later: async (id, seconds) => void (await this.schedule(seconds, "threadWaitCheck", { id })),
+      later: async (id, round, seconds) => void (await this.schedule(seconds, "threadWaitCheck", { id, round })),
       working: (id) => {
         const task = store.get(id);
         return task && (task.status === "sent" || task.status === "working") ? task : null;
@@ -1886,8 +1886,8 @@ export class Resident extends Think<Env> {
   }
 
   /** Scheduled while a thread waits on a slow job: one more look at it (thread-wait.ts). */
-  async threadWaitCheck(payload: { id: string }): Promise<void> {
-    await checkWait(this.waitHost(), payload.id);
+  async threadWaitCheck(payload: { id: string; round: number }): Promise<void> {
+    await checkWait(this.waitHost(), payload.id, payload.round);
   }
 
   /** Keeps a file a task made among its thread's files, within the task's share; why not, when it cannot. */
@@ -1992,10 +1992,12 @@ export class Resident extends Think<Env> {
     this.recordUsage(step, { kind: "worker", via: "" });
   }
 
-  async taskWorkerFinished(id: string, code: string, result: unknown): Promise<void> {
+  async taskWorkerFinished(id: string, code: string, result: unknown, submission?: string): Promise<void> {
     const task = this.workerTask(id, code);
-    // A turn that ended to wait on a slow job: the task is still at work, and a new turn brings the answer.
-    if ((await this.ctx.storage.get<Wait>(`thread_wait:${id}`))?.pending) return;
+    // A turn that ended to wait on a slow job: the task is still at work, and the turn the wait wakes brings the
+    // answer (that one counts, even if it ends before the wait has noted that it woke it).
+    const wait = await this.ctx.storage.get<Wait>(`thread_wait:${id}`);
+    if (wait?.pending && submission !== submissionOf(id, wait)) return;
     if (["sent", "working", "quiet"].includes(task.status)) await this.taskReport(id, code, "result", result);
   }
 

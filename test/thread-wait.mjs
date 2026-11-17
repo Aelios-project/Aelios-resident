@@ -1,7 +1,9 @@
 // Unit tests for waiting on a slow job for a thread (src/thread-wait.ts, http_request's wait_until), with a fake
 // resident, a fake clock and every network call faked: a wait starts once at a time and four times per task at
 // most, the status URL is asked again until the answer is done (a busy server and a failed network are asked
-// again), and the thread is woken in a new turn with the answer, its files saved and keys wiped.
+// again), and the thread is woken in a new turn with the answer, its files saved and keys wiped. The wait is over
+// only once the thread has that turn: a wake, a save or a store that fails is tried again at the next look, and the
+// turn still starts once.
 // Usage: node test/thread-wait.mjs
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
@@ -39,6 +41,9 @@ Date.now = () => now;
 
 const TASK = { id: "t_0123456789", title: "生个视频", status: "working", root: "t_0123456789" };
 
+// A fake resident. `fail` makes the next calls of one of its parts throw; a wake that fails has reached the thread
+// first (it failed half way), and the thread, like Think, starts one turn per submission id however often it is
+// asked.
 function resident(task = TASK) {
   const host = {
     waits: new Map(),
@@ -46,21 +51,39 @@ function resident(task = TASK) {
     saved: new Map(),
     lines: [],
     woken: [],
+    turns: new Map(),
+    fail: { save: 0, wake: 0, progress: 0, over: 0 },
     current: task,
     load: async (id) => host.waits.get(id),
-    store: async (id, wait) => void host.waits.set(id, structuredClone(wait)),
-    later: async (id, seconds) => void host.laterCalls.push([id, seconds]),
+    store: async (id, wait) => {
+      if (!wait.pending && host.fail.over && host.fail.over--) throw new Error("storage hiccup");
+      host.waits.set(id, structuredClone(wait));
+    },
+    later: async (id, round, seconds) => void host.laterCalls.push([id, round, seconds]),
     working: (id) => (host.current && host.current.id === id && ["sent", "working"].includes(host.current.status) ? host.current : null),
     keys: () => KEYS,
-    save: async (_task, path, bytes) => (host.saved.set(path, bytes), null),
-    progress: async (_task, line) => void host.lines.push(line),
-    wake: async (task, submission, brief) => void host.woken.push({ task: task.id, submission, brief })
+    save: async (_task, path, bytes) => {
+      if (host.fail.save && host.fail.save--) throw new Error("thread unreachable");
+      host.saved.set(path, bytes);
+      return null;
+    },
+    progress: async (_task, line) => {
+      if (host.fail.progress && host.fail.progress--) throw new Error("progress refused");
+      host.lines.push(line);
+    },
+    wake: async (task, submission, brief) => {
+      if (!host.turns.has(submission)) host.turns.set(submission, brief);
+      if (host.fail.wake && host.fail.wake--) throw new Error("rpc reset");
+      host.woken.push({ task: task.id, submission, brief });
+    }
   };
   return host;
 }
 
 const STATUS = "https://video.example.com/v1/videos/v_1";
 const start = (host, until = "status=completed|failed", url = STATUS) => w.startWait(host, TASK, { url, headers: { "X-Version": "2" }, until });
+const look = (host, round = 1) => w.checkWait(host, TASK.id, round);
+const done = () => Response.json({ status: "completed", video: Buffer.from(MP4).toString("base64") });
 let failures = 0;
 async function step(name, fn) {
   requests = [];
@@ -78,7 +101,7 @@ await step("a wait starts: kept, asked again in 20 seconds, and the tool's answe
   const host = resident();
   const said = await start(host);
   assert.ok(said.startsWith(h.WAITING), said);
-  assert.deepEqual(host.laterCalls, [[TASK.id, w.WAIT_SECONDS]]);
+  assert.deepEqual(host.laterCalls, [[TASK.id, 1, w.WAIT_SECONDS]]);
   const wait = host.waits.get(TASK.id);
   assert.deepEqual([wait.pending, wait.round, wait.checks, wait.until], [true, 1, 0, "status=completed|failed"]);
   assert.equal(requests.length, 0, "nothing is asked yet");
@@ -91,7 +114,7 @@ await step("not done yet: asked again, with the key and the headers; a busy serv
   const host = resident();
   await start(host);
   answers = [Response.json({ status: "in_progress", progress: 30 }), new Response("busy", { status: 503 }), new Error("connection reset")];
-  for (let i = 0; i < 3; i++) await w.checkWait(host, TASK.id);
+  for (let i = 0; i < 3; i++) await look(host);
   assert.equal(requests.length, 3);
   assert.equal(requests[0].headers.authorization, `Bearer ${SECRET}`);
   assert.equal(requests[0].headers["x-version"], "2");
@@ -105,10 +128,11 @@ await step("done: the thread is woken in a new turn with the answer, its files s
   await start(host);
   answers = [Response.json({ status: "in_progress" }), Response.json({ status: "completed", note: `key ${SECRET} <<<sneaky>>>`, video: Buffer.from(MP4).toString("base64") })];
   now += 20_000;
-  await w.checkWait(host, TASK.id);
+  await look(host);
   now += 20_000;
-  await w.checkWait(host, TASK.id);
+  await look(host);
   assert.equal(host.waits.get(TASK.id).pending, false);
+  assert.equal(host.waits.get(TASK.id).brief, undefined, "the brief is not kept once the thread has it");
   assert.equal(host.woken.length, 1);
   const [{ submission, brief }] = host.woken;
   assert.equal(submission, `${TASK.id}-w1`);
@@ -121,21 +145,22 @@ await step("done: the thread is woken in a new turn with the answer, its files s
   assert.deepEqual(bytes, MP4);
   assert.ok(brief.includes(`Saved as ${path}`));
   assert.deepEqual(host.lines, ["等到结果了，叫醒线程"]);
-  // Once woken, a stray check does nothing.
-  await w.checkWait(host, TASK.id);
+  // Once woken, the look booked for safety does nothing.
+  await look(host);
   assert.equal(host.woken.length, 1);
+  assert.equal(requests.length, 2);
 });
 
 await step("an answer that refuses (404) or cannot be asked ends the wait at once, with what it said", async () => {
   const host = resident();
   await start(host);
   answers = [Response.json({ error: "no such video" }, { status: 404 })];
-  await w.checkWait(host, TASK.id);
+  await look(host);
   assert.match(host.woken[0].brief, /HTTP 404[\s\S]*no such video/);
 
   const local = resident();
   await w.startWait(local, TASK, { url: "http://127.0.0.1/admin", headers: {}, until: "done=true" });
-  await w.checkWait(local, TASK.id);
+  await look(local);
   assert.match(local.woken[0].brief, /Cannot call this URL/);
 });
 
@@ -144,7 +169,7 @@ await step("after 15 minutes it stops and wakes the thread with the last answer"
   await start(host);
   answers = [Response.json({ status: "queued" })];
   now += w.WAIT_MINUTES * 60_000;
-  await w.checkWait(host, TASK.id);
+  await look(host);
   assert.match(host.woken[0].brief, /had not reached status=completed\|failed after 15 minutes \(1 check\)[\s\S]*queued/);
   assert.deepEqual(host.lines, ["等了 15 分钟还没好，叫醒线程"]);
 });
@@ -153,7 +178,7 @@ await step("a task no longer at work is not woken, and a task waits four times a
   const host = resident();
   await start(host);
   host.current = { ...TASK, status: "done" };
-  await w.checkWait(host, TASK.id);
+  await look(host);
   assert.equal(host.waits.get(TASK.id).pending, false);
   assert.equal(host.woken.length, 0);
   assert.equal(requests.length, 0);
@@ -164,6 +189,92 @@ await step("a task no longer at work is not woken, and a task waits four times a
     host.waits.get(TASK.id).pending = false;
   }
   assert.match(await start(host), /waited 4 times already/);
+});
+
+await step("the first wake fails: the next look wakes the thread exactly once, without asking the job again", async () => {
+  const host = resident();
+  await start(host);
+  host.fail.wake = 1;
+  answers = [done()];
+  await look(host);
+  let wait = host.waits.get(TASK.id);
+  assert.equal(wait.pending, true, "not over while the thread may not have its turn");
+  assert.match(wait.brief, /came back after 1 check/);
+  assert.equal(host.woken.length, 0);
+  assert.equal(host.saved.size, 1);
+  assert.deepEqual(host.lines, [], "no line until the thread is woken");
+  assert.deepEqual(host.laterCalls.at(-1), [TASK.id, 1, w.WAIT_SECONDS], "the next look is booked");
+
+  now += 20_000;
+  await look(host);
+  assert.equal(requests.length, 1, "the job is not asked again");
+  assert.equal(host.saved.size, 1, "nor its files saved again");
+  assert.deepEqual(host.woken.map((x) => x.submission), [`${TASK.id}-w1`]);
+  assert.equal(host.woken[0].brief, wait.brief, "the same words as the first time");
+  assert.equal(host.turns.size, 1, "one turn, though the failed wake had reached the thread");
+  wait = host.waits.get(TASK.id);
+  assert.deepEqual([wait.pending, wait.brief, wait.checks], [false, undefined, 1]);
+  assert.deepEqual(host.lines, ["等到结果了，叫醒线程"]);
+  await look(host);
+  assert.equal(host.woken.length, 1);
+});
+
+await step("the end of the wait not noted after waking: the next look wakes the same turn again and notes it", async () => {
+  const host = resident();
+  await start(host);
+  host.fail.over = 1;
+  answers = [done()];
+  await look(host);
+  assert.equal(host.waits.get(TASK.id).pending, true);
+  assert.equal(host.woken.length, 1);
+  await look(host);
+  assert.equal(requests.length, 1);
+  assert.deepEqual([host.turns.size, host.woken.length, host.woken[1].submission], [1, 2, `${TASK.id}-w1`]);
+  assert.equal(host.waits.get(TASK.id).pending, false);
+});
+
+await step("a save that fails: nothing is woken, and the next look asks again and saves it then", async () => {
+  const host = resident();
+  await start(host);
+  host.fail.save = 1;
+  answers = [done()];
+  await look(host);
+  const wait = host.waits.get(TASK.id);
+  assert.deepEqual([wait.pending, wait.brief, host.woken.length, host.saved.size], [true, undefined, 0, 0]);
+  answers = [done()];
+  await look(host);
+  assert.equal(requests.length, 2);
+  assert.equal(host.saved.size, 1);
+  assert.equal(host.woken.length, 1);
+  assert.ok(host.woken[0].brief.includes(`Saved as ${[...host.saved.keys()][0]}`));
+  assert.equal(host.waits.get(TASK.id).pending, false);
+});
+
+await step("a progress line that fails changes nothing: the thread is woken and the wait is over", async () => {
+  const host = resident();
+  await start(host);
+  host.fail.progress = 1;
+  answers = [done()];
+  await look(host);
+  assert.equal(host.woken.length, 1);
+  assert.equal(host.waits.get(TASK.id).pending, false);
+  const booked = host.laterCalls.length;
+  await look(host);
+  assert.equal(host.laterCalls.length, booked, "and nothing more is booked");
+});
+
+await step("a look booked for an earlier round does nothing to the next wait", async () => {
+  const host = resident();
+  await start(host);
+  answers = [done()];
+  await look(host);
+  assert.ok((await start(host)).startsWith(h.WAITING));
+  assert.equal(host.waits.get(TASK.id).round, 2);
+  await look(host, 1);
+  assert.equal(requests.length, 1, "round 1's look asks nothing");
+  answers = [done()];
+  await look(host, 2);
+  assert.deepEqual(host.woken.map((x) => x.submission), [`${TASK.id}-w1`, `${TASK.id}-w2`]);
 });
 
 await step("wait_until: field=value, a.b=x|y; the tool takes it only with a GET and a plain address", async () => {

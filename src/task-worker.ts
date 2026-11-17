@@ -18,7 +18,7 @@ type TaskParent = {
   taskWorkerTool(id: string, code: string, name: string, input: unknown): Promise<unknown>;
   taskWorkerUsage(id: string, code: string, step: StepLike): Promise<void>;
   taskReport(id: string, code: string, kind: "progress" | "result", body: unknown): Promise<unknown>;
-  taskWorkerFinished(id: string, code: string, body: unknown): Promise<void>;
+  taskWorkerFinished(id: string, code: string, body: unknown, submission?: string): Promise<void>;
 };
 
 /** A message of the thread as the web page shows it: its words, and a line for each tool it used. */
@@ -119,7 +119,7 @@ export class TaskWorker extends Think<Env> {
     const { taskId, code } = submission.metadata ?? {};
     if (typeof taskId !== "string" || typeof code !== "string") return;
     const parent = await this.parentAgent(Resident) as unknown as TaskParent;
-    await parent.taskWorkerFinished(taskId, code, await this.reportOf(submission));
+    await parent.taskWorkerFinished(taskId, code, await this.reportOf(submission), submission.submissionId);
   }
 
   /**
