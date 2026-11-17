@@ -4289,11 +4289,18 @@ export class Resident extends Think<Env> {
     return `${this.#webBoot}.${this.#webRev}`;
   }
 
-  /** The sql tag for a store the web page shows from (tasks, voices): every write it makes changes the version. */
+  /**
+   * The sql tag for a store the web page shows from (tasks, voices): a write that changes a row changes the version.
+   * One that changes none does not: every look reads the waiting list, whose reads first clear out old rows, and
+   * counting those would give every look a new version, so the page would never get `same` back (webLook).
+   */
   private sqlShownOnWeb(): Sql {
     return (strings, ...values) => {
-      const rows = this.sql(strings, ...(values as never[]));
-      if (/^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(strings[0])) this.webChanged();
+      if (!/^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(strings[0])) return this.sql(strings, ...(values as never[])) as never;
+      const query = strings.reduce((text, part, i) => text + part + (i < values.length ? "?" : ""), "");
+      const cursor = this.ctx.storage.sql.exec(query, ...(values as SqlStorageValue[]));
+      const rows = cursor.toArray();
+      if (cursor.rowsWritten > 0) this.webChanged();
       return rows as never;
     };
   }

@@ -29,6 +29,8 @@ const built = await build({
       import { onMessages } from "./src/via-aelios.ts";
       import { reachesLetterThreshold, letterTokenThreshold } from "./src/fold.ts";
       import { inQuietHours, quietHoursInWords, quietHoursOf } from "./src/quiet-hours.ts";
+      import { ChatStop } from "./src/chat-stop.ts";
+      import { stickerMarks } from "./src/sticker-marks.ts";
       export { ALARM_PREFIX, SKIP };
       export { checkinPrompt, heartbeatPrompt, letterPrompt } from "./src/prompts.ts";
       export { alarmNote } from "./src/alarms.ts";
@@ -50,6 +52,7 @@ const built = await build({
       export class ActivityHarness {
         #drafts = new Map();
         #draftActive = null;
+        #chatStop = new ChatStop();
         #searches = new Map();
         #theirTurns = new Set();
         #readOutside = new Set();
@@ -82,6 +85,9 @@ const built = await build({
         letterJob() { return this.job; }
         async finishLetter(...args) { this.finished.push(args); }
         clearTurn() {}
+        // make_file's store is a boundary here; made-files.mjs tests it.
+        madeFiles() { return { withReply() {} }; }
+        stickersOn() { return false; } // sticker packs: stickers.mjs and the stickers phase
         savedModel() { return "fake"; }
         alarmsOn() { return true; }
         async checkinAsVoice() { return false; }
