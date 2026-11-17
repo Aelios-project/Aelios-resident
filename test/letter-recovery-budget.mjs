@@ -107,6 +107,8 @@ const compiled = await build({
     import { markedForLetter } from './src/cache-window.ts';
     import { taskOfNote } from './src/cloud-tasks.ts';
     import { usageLabel } from './src/usage.ts';
+    import { ChatStop } from './src/chat-stop.ts';
+    import { quietAfterTools } from './src/after-tools.ts';
     export { LETTER_PREFIX, installEffectiveHistory, readAuxiliaryAnswer, removeAuxiliaryTurn };
     const promptCache = () => ({});
     class WebDraft { constructor(..._args) {} }
@@ -116,7 +118,7 @@ const compiled = await build({
       #letterReason = 'handoff';
       #letterAttempted = false;
       #theirTurns = new Set(); #readOutside = new Set(); #drafts = new Map();
-      #spoke = null; #draftActive = null; #outbox = new Map();
+      #spoke = null; #draftActive = null; #chatStop = new ChatStop(); #outbox = new Map();
       #turnThread = new Map(); #stickerSent = new Set(); #turnTasks = new Map();
       #usageLabels = new Map(); #webTurns = new Map(); #webSeenAt = 0; #turnVoice = null; #lastReply = new Map();
       effectiveHistories = new WeakMap();
@@ -124,8 +126,10 @@ const compiled = await build({
       constructor(public session, public sql, public hydrationByteBudget, storage) { this.ctx = { storage }; }
       restoreTurn() {} markTurn() {} async stopHeartbeats() {}
       userMessageBefore() { return this.liveUser; }
+      get messages() { return this.liveUser ? [this.liveUser] : []; } // Think's live UI messages
       windowHistory(messages) { return messages; }
       async boot() { return ''; } getTools() { return {}; } letterCache() { return null; }
+      stickerList() { return ''; } async offlineBoxModel() { return {}; }
       async schedule() { throw new Error('Unexpected recovery poll'); }
       async saveMessages() { throw new Error('Model must not run'); }
       ${["historyControl", "letterState", "letterJob", "saveLetterJob", "deleteLetterJob", "failLetter", "setWindow", "performResumeLetter", "answerAfter", "takeOut", "beforeTurn", "letterTurn"].map(method).join("\n")}
