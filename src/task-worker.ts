@@ -11,6 +11,7 @@ import { aeliosModel } from "./via-aelios";
 import { noModel } from "./no-model";
 import { fakeModel } from "./fake-model";
 import { claudeOnRunPath } from "./claude-run";
+import { WAITING } from "./web/http-request";
 
 type TaskParent = {
   taskWorkerConfig(id: string, code: string): Promise<{ model: string; memory: AeliosConfig | null; tools: { name: string; description: string; schema: JSONSchema7 }[] }>;
@@ -49,9 +50,11 @@ export class TaskWorker extends Think<Env> {
   override getSystemPrompt(): string { return LOCAL_TASK_SYSTEM; }
   override getAIBinding(): Ai { return claudeOnRunPath(super.getAIBinding()); }
 
-  async enqueue(job: { id: string; code: string; brief: string }) {
-    return this.submitMessages([{ id: `task_${job.id}`, role: "user", parts: [{ type: "text", text: job.brief }] }], {
-      submissionId: job.id, idempotencyKey: job.id, metadata: { taskId: job.id, code: job.code }
+  /** A task's turn: its first, or (`submission`) a later one of the same task, such as the one a wait wakes (thread-wait.ts). */
+  async enqueue(job: { id: string; code: string; brief: string; submission?: string }) {
+    const submission = job.submission ?? job.id;
+    return this.submitMessages([{ id: `task_${submission}`, role: "user", parts: [{ type: "text", text: job.brief }] }], {
+      submissionId: submission, idempotencyKey: submission, metadata: { taskId: job.id, code: job.code }
     });
   }
 
@@ -80,8 +83,10 @@ export class TaskWorker extends Think<Env> {
     }
     return {
       model, tools, maxSteps: LOCAL_TASK_STEPS, maxOutputTokens: LOCAL_TASK_OUTPUT,
+      // Reported, or waiting on a slow job: a new turn brings its answer (thread-wait.ts).
       stopWhen: ({ steps }) => steps.some((step) => step.toolResults.some((result) =>
-        result.toolName === "report_result" && !!result.output && typeof result.output === "object" && "ok" in result.output && result.output.ok === true
+        (result.toolName === "report_result" && !!result.output && typeof result.output === "object" && "ok" in result.output && result.output.ok === true) ||
+        (result.toolName === "http_request" && typeof result.output === "string" && result.output.startsWith(WAITING))
       ))
     };
   }
@@ -118,11 +123,11 @@ export class TaskWorker extends Think<Env> {
   }
 
   /**
-   * How a job stands, for the host's quiet check: Think does not retry onSubmissionStatus, so a result that did
-   * not get through is picked up here. null while it is still running.
+   * How a job's latest turn stands, for the host's quiet check: Think does not retry onSubmissionStatus, so a result
+   * that did not get through is picked up here. null while it is still running.
    */
-  async finishedReport(taskId: string): Promise<{ status: string; summary: string; links?: string[] } | null> {
-    const submission = await this.inspectSubmission(taskId);
+  async finishedReport(submissionId: string): Promise<{ status: string; summary: string; links?: string[] } | null> {
+    const submission = await this.inspectSubmission(submissionId);
     if (!submission) return { status: "failed", summary: "线程里找不到这一单。" };
     return FINISHED.includes(submission.status) ? this.reportOf(submission) : null;
   }

@@ -457,7 +457,7 @@ Aelios-resident 是为 Aelios 做的，一定要接 Aelios 才能用。不打算
 - **你自己的机器**（电脑或服务器）：用 [`aelios-runner`](https://github.com/Aelios-project/Aelios-desktop/tree/main/packages/runner)（在 Aelios-desktop 仓库里） 配对（后台帮忙 → 机器 → 生成配对码）。每条线程是那台机器上一个 ACP 帮手（Kiro、DeepSeek Harness 或别的）的会话，在固定的目录里干活，用哪个帮手、什么权限都由那台机器自己定。你在这种线程里说的话直接进它的会话（正在跑的一轮停下，用你的话重来）；线程的回话原样显示，住户只留一份记录，不再转述。需要你拍板时线程最后一行写 `ASK:`，线程就标成等你。机器不在线时派活当场被拒，不排队。
 住户自己这里和 GitHub Actions 上的线程用**线程的模型**：默认是 Workers AI 的 `@cf/zai-org/glm-4.7-flash`（每天有免费额度），想换就在「线程用哪个模型」里填（`CLOUD_TASK_MODEL`）。线程不会自己去用聊天的模型，贵的聊天模型不会花在跑腿上。
 
-**调 API**（「线程能调 API」，`CLOUD_TASK_HTTP`，默认关）：打开后住户这里的线程多一个 `http_request`，能发 GET 或带内容的 POST，调生图、语音、视频这类 API。每家的钥匙填在「带钥匙的网站」里（比如 `generativelanguage.googleapis.com` 填一行 `x-goog-api-key: …`，`api.openai.com` 直接粘一串 token）：只发给那个网站，回来的内容里有钥匙会抹掉。回来的图片、声音、视频，以及 JSON 里很长的 base64，都存成线程的文件（每个最多 10 MB），线程页上能直接看、直接播；Gemini 的裸 PCM 语音存成 WAV。聊天本身没有这个工具。
+**调 API**（「线程能调 API」，`CLOUD_TASK_HTTP`，默认关）：打开后住户这里的线程多一个 `http_request`，能发 GET 或带内容的 POST，调生图、语音、视频这类 API。每家的钥匙填在「带钥匙的网站」里（比如 `generativelanguage.googleapis.com` 填一行 `x-goog-api-key: …`，`api.openai.com` 直接粘一串 token）：只发给那个网站，回来的内容里有钥匙会抹掉。回来的图片、声音、视频，以及 JSON 里很长的 base64，都存成线程的文件（每个最多 10 MB），线程页上能直接看、直接播；Gemini 的裸 PCM 语音存成 WAV。要等几分钟的活（比如生视频），线程带着 `wait_until`（如 `done=true`、`status=completed|failed`）去 GET 它的状态地址：这一轮就此结束，住户每 20 秒替它问一次，不调模型，最多等 15 分钟，好了开新一轮把结果交给线程（一单最多等 4 次）。聊天本身没有这个工具。
 
 网页聊天页右上角的「线程」按钮（它的页面里也有）列出所有线程。点开一条能看到：
 
