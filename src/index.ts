@@ -15,7 +15,7 @@
 //   GET  /stickers/<key>                a sticker's picture for the web page (stickers.ts); the key is long and random
 //   GET  /avatar/<key>                  the resident's avatar, put up on the web page (public, like a sticker)
 //   GET  /manifest.webmanifest          the web page as an app for the home screen, with the resident's name and avatar
-//                                       (/r/<id>/manifest.webmanifest: another resident's, opening on it)
+//                                       (/r/<id>/manifest.webmanifest: another resident's; each opens on /?r=<id>)
 //   POST /runner/v1/pair|heartbeat|poll|receipt|progress|permission   the paired machine's runner (machine.ts, Aelios-desktop packages/runner/PROTOCOL.md):
 //                                       pairing with a code from the settings page, then its own token as Bearer
 //   POST /box/v1/pair, GET /box/v1/link   a box (acp-box/) pairing with a code, then dialing in on a WebSocket with its
@@ -84,13 +84,15 @@ const residentOf = (env: Env, at: At) => getAgentByName(env.RESIDENT, at.id);
 async function manifest(env: Env, at: At): Promise<Response> {
   const agent = await residentOf(env, at);
   const [{ name, avatar }, type] = await Promise.all([agent.webIdentity(), agent.avatarType()]);
-  const start = at.id === AGENT_NAME ? "/" : `/?r=${at.id}`;
+  // The first resident's app keeps the id it was installed with, but opens on it too: a bare "/" would open on
+  // whichever resident this browser had last.
+  const start = `/?r=${at.id}`;
   const icons = avatar && type ? [{ src: avatar, sizes: "512x512", type, purpose: "any maskable" }] : [
     { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
     { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }
   ];
   return Response.json(
-    { id: start, name, short_name: name, start_url: start, scope: "/", display: "standalone", background_color: "#070a16", theme_color: "#070a16", icons },
+    { id: at.id === AGENT_NAME ? "/" : start, name, short_name: name, start_url: start, scope: "/", display: "standalone", background_color: "#070a16", theme_color: "#070a16", icons },
     { headers: { "content-type": "application/manifest+json", "cache-control": "no-cache" } }
   );
 }

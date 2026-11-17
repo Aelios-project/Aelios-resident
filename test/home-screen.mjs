@@ -164,13 +164,43 @@ function browser({ ua = "Mozilla/5.0 (Linux; Android 14) Chrome/150", standalone
   console.log("PASS the service worker only answers for the page, and with no network shows a note that reopens it");
 }
 
+// ---- which resident an icon opens on: the real app.js start(), opened at the app's start_url ----
+async function openedOn(startUrl, remembered) {
+  const url = new URL(startUrl, "https://resident.test");
+  const store = { "resident.current": remembered };
+  const noop = () => {};
+  const context = {
+    location: { search: url.search, hash: "", origin: url.origin, href: url.href },
+    localStorage: { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } },
+    document: { documentElement: { dataset: {} }, addEventListener: noop, querySelector: () => null, title: "" },
+    navigator: { userAgent: "test" },
+    matchMedia: () => ({ matches: false, addEventListener: noop }),
+    fetch: () => Promise.reject(new Error("offline")),
+    addEventListener: noop, dispatchEvent: noop, Event: class {},
+    setTimeout, clearTimeout, console, URL, URLSearchParams, Promise
+  };
+  context.window = context;
+  context.telegramReady = Promise.resolve(true);
+  vm.createContext(context);
+  for (const file of ["public/markdown.js", "public/machine-ask-kind.js", "public/app.js", "public/home-screen.js"]) vm.runInContext(readFileSync(file, "utf8"), context);
+  const page = vm.runInContext("resident()", context);
+  page.$nextTick = noop;
+  await page.start();
+  return page.resident;
+}
+assert.equal(await openedOn("/?r=default", "mochi"), "default", "the first resident's icon opens on it, whoever was opened last");
+assert.equal(await openedOn("/?r=mochi", "default"), "mochi", "another resident's icon opens on that one");
+assert.equal(await openedOn("/", "mochi"), "mochi", "the plain address still goes back to the one opened last");
+console.log("PASS each icon opens on its own resident, not on the one this browser opened last");
+
 // ---- the manifests, from the local Worker ----
 if (process.argv[2] === "worker") {
   const WORKER = process.env.WORKER_URL || "http://127.0.0.1:8787";
   const KEY = "test-web-key";
   const post = (path, body) => fetch(WORKER + path, { method: "POST", headers: { "x-web-key": KEY, "content-type": "application/json" }, body: JSON.stringify(body) });
   const first0 = await (await fetch(`${WORKER}/manifest.webmanifest`)).json();
-  assert.deepEqual([first0.id, first0.start_url, first0.scope, first0.display], ["/", "/", "/", "standalone"], "the first resident's app is what it always was");
+  assert.deepEqual([first0.id, first0.start_url, first0.scope, first0.display], ["/", "/?r=default", "/", "standalone"], "the first resident's app keeps its id and opens on it");
+  assert.equal(await openedOn(first0.start_url, "homeapp"), "default", "after another resident was open, its icon still opens on it");
   assert.equal((await fetch(`${WORKER}/r/nobody/manifest.webmanifest`)).status, 404, "no app for a resident that is not there");
   const made = await post("/web/residents", { id: "homeapp", name: "麻薯" });
   assert.equal(made.status, 200, await made.clone().text());
@@ -179,6 +209,7 @@ if (process.argv[2] === "worker") {
     assert.match(response.headers.get("content-type"), /manifest\+json/);
     const app = await response.json();
     assert.deepEqual([app.id, app.start_url, app.scope, app.name], ["/?r=homeapp", "/?r=homeapp", "/", "麻薯"], "another resident: an app of its own that opens on it");
+    assert.equal(await openedOn(app.start_url, "default"), "homeapp");
     assert.deepEqual(app.icons.map((i) => [i.src, i.type, i.purpose]), [["/icon-192.png", "image/png", "any maskable"], ["/icon-512.png", "image/png", "any maskable"]]);
     // A JPEG avatar: its address has no extension, so the type has to be written out or Chrome will not install.
     const jpeg = new Uint8Array(64);
@@ -195,5 +226,5 @@ if (process.argv[2] === "worker") {
     const gone = await post("/web/residents/remove", { id: "homeapp" });
     if (gone.status !== 200) console.log("could not remove the test resident:", gone.status, await gone.text());
   }
-  console.log("PASS each resident's manifest: the first one unchanged, another one opening on itself, none for an unknown one");
+  console.log("PASS each resident's manifest: the first one keeps its id, each opens on its own resident, none for an unknown one");
 }
