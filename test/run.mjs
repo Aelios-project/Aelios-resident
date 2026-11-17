@@ -209,7 +209,11 @@ if (phase === "main") {
   await step("the notebook is read and written through Aelios' MCP, and a long page comes back whole", async () => {
     let before = (await sent()).length;
     await post("看小本本");
+    // A long page goes out in several bubbles: wait for its end, so the later ones are not taken for the next answers.
     let out = (await waitForSends(before, 1)).join("\n");
+    for (const start = Date.now(); !out.includes("下一步：第 29 章") && Date.now() - start < 20000; await sleep(200)) {
+      out = (await sent()).slice(before).join("\n");
+    }
     assert.ok(out.includes("下一步：第 29 章"), `the end of a long page: ${out.slice(-80)}`);
     let call = (await log()).filter((e) => e.kind === "aelios.mcp").at(-1);
     assert.equal(call.body.params.name, "notebook");
@@ -544,7 +548,7 @@ if (phase === "main") {
     await waitForSends(before, 1);
     call = await lastMessages();
     assert.equal(call.purpose, null);
-    assert.equal(call.body.model, "anthropic/claude-opus-5-5");
+    assert.equal(call.body.model, "anthropic/claude-opus-5.5", "as it was picked: how a provider spells it is Aelios' business");
     assert.deepEqual(call.body.thinking, { type: "adaptive", display: "summarized" });
     assert.deepEqual(call.body.output_config, { effort: "high" });
     await web("/web/config", "test-web-key", { key: "THINKING_EFFORT", text: "" });
@@ -573,7 +577,7 @@ if (phase === "main") {
       assert.deepEqual([row.input, row.cacheRead, row.cacheWrite, row.cacheWrite1h, row.output], [20, 1000, 300, 300, 5]);
       assert.equal(row.cost, null, "a model with no list price");
     }
-    const opus = usage.rows.filter((row) => row.model === "anthropic/claude-opus-5-5" && row.kind === "chat");
+    const opus = usage.rows.filter((row) => row.model === "anthropic/claude-opus-5.5" && row.kind === "chat");
     assert.equal(opus.length, 2);
     // 20 × $4 + 1000 × $0.20 + 300 × $8 (one-hour write) + 5 × $20, per million tokens.
     for (const row of opus) assert.ok(Math.abs(row.cost - 0.00278) < 1e-9, String(row.cost));
@@ -1893,17 +1897,16 @@ if (phase === "tasks" || phase === "tasks-quiet" || phase === "tasks-roles") {
       assert.equal((await card()).status, "done");
     });
 
-    await step("ten a day at most, on the settings page and in the chat", async () => {
-      for (let left = 10 - (await tasks()).today; left > 0; left -= 1) assert.equal((await web("/web/tasks/test", KEY, {})).status, 200);
-      const over = await web("/web/tasks/test", KEY, {});
-      assert.equal(over.status, 400);
-      assert.match((await over.json()).error, /已经派了 10 单/);
-      assert.match(await ask("派活"), /10 tasks have gone out in the last 24 hours/);
-      assert.equal((await fires()).length, 9, "9 runs on GitHub Actions: 8 sent by the resident and the test run (1 more ran locally)");
+    await step("no daily limit: past ten in a day, the settings page and the chat still send", async () => {
+      for (let left = 11 - (await tasks()).today; left > 0; left -= 1) assert.equal((await web("/web/tasks/test", KEY, {})).status, 200);
+      assert.ok((await tasks()).today > 10, "more than ten in 24 hours");
+      const out = await ask("派活");
+      assert.match(out, /\bt_[0-9a-f]{10}\b/, out);
+      assert.doesNotMatch(out, /Not sent/);
     });
   }
 
-  // Roles on a worker of their own: the tasks stage uses all ten of the day.
+  // Roles on a worker of their own, started fresh.
   if (phase === "tasks-roles") {
     await set({ CLOUD_TASKS: "on" });
     await step("roles: three come with it; one the user adds on the settings page, with its own model, does a thread's job with its template first", async () => {
@@ -3082,15 +3085,20 @@ if (phase === "web") {
 
   await step("a look with the version the page has gets 'the same' back, reading nothing, until something it shows changes", async () => {
     const look = async (since) => (await json(`/web/messages${since ? `?since=${encodeURIComponent(since)}` : ""}`)).data;
+    // The turn, approvals and waiting list come with every look (chat-permissions.ts); `same` is about the conversation.
+    const same = async (since) => {
+      const { same, rev, data } = await look(since);
+      return { same, rev, data };
+    };
     const first = await look();
     assert.ok(Array.isArray(first.data) && /^[0-9a-f]{8}\.\d+$/.test(first.rev), JSON.stringify(first.rev));
-    assert.deepEqual(await look(first.rev), { same: true, rev: first.rev });
+    assert.deepEqual(await same(first.rev), { same: true, rev: first.rev, data: undefined });
     assert.ok(Array.isArray((await look("0000000.0")).data), "another version (a page from before a restart) reads all of it");
     let rev = first.rev;
     const changed = async (what) => {
       const now = await look(rev);
       assert.ok(Array.isArray(now.data) && now.rev !== rev, `${what} changes the version`);
-      assert.deepEqual(await look(now.rev), { same: true, rev: now.rev }, `and then it is the same again (${what})`);
+      assert.deepEqual(await same(now.rev), { same: true, rev: now.rev, data: undefined }, `and then it is the same again (${what})`);
       rev = now.rev;
     };
     await say({ text: "又来一句" });

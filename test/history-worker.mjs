@@ -12,8 +12,11 @@ try {
   await api('/web/model', { text: 'fake' });
   // Inspect while the request is still pending, then ensure its temporary id/state is gone.
   const request = api('/web/say', { text: '思考流测试' });
-  await new Promise(resolve => setTimeout(resolve, 750));
-  const live = (await api('/web/messages')).data.at(-1);
+  // Her message waits DEBOUNCE_SECONDS for more before its turn starts (web-burst.ts); then the reply thinks for 2 seconds.
+  let live;
+  for (const start = Date.now(); !(live?.pending && live.activity?.length) && Date.now() - start < 5000; await new Promise(resolve => setTimeout(resolve, 100))) {
+    live = (await api('/web/messages')).data.at(-1);
+  }
   assert.equal(live.pending, true);
   assert.equal(live.activity[0].text, '先想想这一句。');
   assert.equal(live.text, '');

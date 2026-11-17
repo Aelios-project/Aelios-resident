@@ -11,6 +11,8 @@ NO_PROXY=127.0.0.1 npx wrangler dev --config wrangler.test.jsonc --port 8787 &
 NO_PROXY=127.0.0.1 node test/run.mjs main
 ```
 
+全部跑一遍用 `bash test/all.sh`（先 `npm ci`，8787 和 9999 两个端口要空着）：类型检查、不用起 Worker 的每个测试，以及下面每个阶段和要起 Worker 的测试，每个都起一个全新的 Worker、带上它要的变量，要重启的两段中间重启一次。每个测试一行结果，挂了的给出日志在哪；后面跟名字只跑那几个，比如 `bash test/all.sh main web chat-search`。`crash-1`、`crash-2` 要人看着，`machine-e2e.mjs` 要 desktop 的 runner，都不在里面。
+
 `wrangler.test.jsonc` 用脚本模型（`FAKE_MODEL=true`），回什么由 `src/fake-model.ts` 按你发的话决定。测试什么钟点都可能跑，所以它把 `QUIET_HOURS` 设成 `off`，要测夜里别问的阶段自己在设置页填一段包住当前时间的时段。
 
 `test/run.mjs` 后面跟阶段名，每个阶段要一个刚起的 Worker（先删 `.wrangler/state`）。有的阶段要带变量起 Worker，见 `test/run.mjs` 开头：
@@ -27,7 +29,7 @@ NO_PROXY=127.0.0.1 node test/run.mjs main
 | `stickers` | 表情包：回复里写的标记 `[sticker: 包/名字]` 从话里拿掉、表情包紧跟在那段后面发、一次回复只发第一张、没有的名字只拿掉（整条只有它时回「没说出话来」）、清单在系统提示词里（没有 send_sticker 工具）；话说完画了表情、工具回来后又把那段话说一遍或说「No response requested.」的，那段不发、不留 |
 | `voice` | 语音条，以及发到 Telegram 的语音（整条回复说出来的、`send_voice` 发的）网页上那条回复也带着、能播放，只念一次 |
 | `tasks` | 后台帮忙：住户自己的线程、GitHub Actions 两处派活和回报，网页上的线程页、文件和直接跟线程说话；关着时没有派活、找东西和出文件的工具，开了以后住户用 `make_file` 出文件（发到 Telegram 是文件，网页上挂在回复下面，做完文件后模型出错也照样挂着，网页上删掉那条回复时文件跟着删、前面的留着，`/web/file` 要钥匙、按附件下载），用一个 `find` 自己找线程（按交代的、交回的和文件名，测试单不算；也能按某几天找，太早的那天没有）、看线程的文件（没有的、不在住户这里的说清楚，看过以后这一轮不派活）、搜聊天记录（不算正在回的那句）和看一条的前后；一次回复最多 3 单；正在回她的时候线程交回来，等这条回完再说；线程交回来做完或没做成时，不等她开口接着派同一条线程，连着最多两次，从回报里派别的不行 |
-| `tasks-roles` | 子智能体的角色：自带三个，设置页加的角色带自己的模型，派活时角色的要求放在单子前面、线程用角色的模型、她在那条线程里直接说的和之后没写角色的接着派也还用这个角色和模型，没有的角色说清楚有哪些；先读了网页或线程的文件，那一轮照样能派活（单独一个 Worker：`tasks` 那组把一天 10 单用满了） |
+| `tasks-roles` | 子智能体的角色：自带三个，设置页加的角色带自己的模型，派活时角色的要求放在单子前面、线程用角色的模型、她在那条线程里直接说的和之后没写角色的接着派也还用这个角色和模型，没有的角色说清楚有哪些；先读了网页或线程的文件，那一轮照样能派活（单独起一个新 Worker） |
 | `tasks-quiet` | 派出去的活没回音（带 `--var CLOUD_TASK_QUIET_MINUTES:0.05`） |
 | `sites` | 带钥匙的网站 |
 | `heartbeat` | 未达写信门槛时仍走心跳，夜里别问的时段里不问（带 `--var LETTER_IDLE_MINUTES:0.05 --var LETTER_TOKEN_THRESHOLD:100000 --var ALARM_MINUTE_SECONDS:0.05`） |

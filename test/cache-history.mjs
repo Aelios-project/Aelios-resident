@@ -55,6 +55,8 @@ const { historyCutoff, historyAnchor, historyForWindow, ResidentWindowHarness, t
   import { LETTER_PREFIX } from "./src/prompts.ts";
   import { taskOfNote } from "./src/cloud-tasks.ts";
   import { usageLabel } from "./src/usage.ts";
+  import { ChatStop } from "./src/chat-stop.ts";
+  import { quietAfterTools } from "./src/after-tools.ts";
   export { historyCutoff, historyAnchor, historyForWindow, LETTER_PREFIX };
   ${residentSource.match(/^function promptCache\([^\n]*[\s\S]*?^\}/m)[0]}
   ${sdkConstant("MODEL_RECENT_WINDOW")}
@@ -70,6 +72,7 @@ const { historyCutoff, historyAnchor, historyForWindow, ResidentWindowHarness, t
     #drafts = new Map();
     #spoke = null;
     #draftActive = null;
+    #chatStop = new ChatStop();
     #outbox = new Map();
     #turnThread = new Map();
     #stickerSent = new Set();
@@ -82,6 +85,10 @@ const { historyCutoff, historyAnchor, historyForWindow, ResidentWindowHarness, t
     #theirTurns = new Set();
     #readOutside = new Set();
     ctx = { storage: { put: async () => {} } };
+    messages = []; // Think's live UI messages: no web/group metadata in these turns
+    // The sticker list and a disconnected box are boundaries here, not what this file tests.
+    stickerList() { return ""; }
+    async offlineBoxModel() { return {}; }
     failed = null;
     failLetter(error) { this.failed = error; }
     // The shared effective planner is tested with real Sessions in effective-history.mjs.
