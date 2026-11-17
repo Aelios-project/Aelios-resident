@@ -269,14 +269,17 @@ const taskField = (key) => taskGroup.fields.find((field) => field.key === key);
 const taskFields = (on) => [
   { key: 'CLOUD_TASKS', kind: 'choice', value: on, fromWorker: '', choices: ['on', 'off'] },
   { key: 'CLOUD_TASK_GITHUB_TOKEN', kind: 'secret', value: '', fromWorker: '', saved: false, workerHas: false },
+  { key: 'CLOUD_TASK_HTTP', kind: 'choice', value: '', fromWorker: '', choices: ['on', 'off'] },
   { key: 'CLOUD_TASK_MODEL', kind: 'text', value: '', fromWorker: '' }
 ];
-assert.deepEqual(Array.from(taskGroup.fields, (field) => field.key), ['CLOUD_TASKS', 'CLOUD_TASK_GITHUB_TOKEN', 'CLOUD_TASK_MODEL']);
+assert.deepEqual(Array.from(taskGroup.fields, (field) => field.key), ['CLOUD_TASKS', 'CLOUD_TASK_GITHUB_TOKEN', 'CLOUD_TASK_HTTP', 'CLOUD_TASK_MODEL']);
 const github = { on: false, repo: '', url: '', problem: '', tokenPage: 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=Aelios-resident' };
 page.config = { fields: taskFields('') };
 page.cloud = { on: false, configured: false, origin: 'https://r.example', github, today: 0, limit: 10, tasks: [] };
 assert.equal(page.inEffect(taskField('CLOUD_TASKS')), 'off', 'off unless turned on');
 assert.equal(page.shown(taskField('CLOUD_TASK_GITHUB_TOKEN')), false);
+assert.equal(page.shown(taskField('CLOUD_TASK_HTTP')), false, 'calling APIs only shows with background help on');
+assert.equal(page.inEffect(taskField('CLOUD_TASK_HTTP')), 'off', 'and is off unless turned on');
 assert.equal(page.sectionSummary('tasks'), '关');
 assert.ok(!page.sectionNeeds('tasks'));
 page.config = { fields: taskFields('on') };
@@ -285,6 +288,10 @@ assert.ok(page.sectionNeeds('tasks'), 'not known to be set up until the resident
 page.cloud = { ...page.cloud, on: true, configured: true, mode: 'local', today: 2 };
 assert.equal(page.sectionSummary('tasks'), '自己的线程 · 24 小时内派了 2 单');
 assert.ok(!page.sectionNeeds('tasks'), 'threads here need nothing more');
+assert.equal(page.shown(taskField('CLOUD_TASK_HTTP')), true);
+page.config.fields[2].value = 'on';
+assert.equal(page.sectionSummary('tasks'), '自己的线程 · 能调 API · 24 小时内派了 2 单');
+page.config.fields[2].value = '';
 page.cloud = { ...page.cloud, mode: 'linux', github: { ...github, on: true, repo: 'octo/resident-hands', url: 'https://github.com/octo/resident-hands' } };
 assert.equal(page.sectionSummary('tasks'), '自己的线程 + GitHub Actions · 24 小时内派了 2 单');
 assert.ok(!page.sectionNeeds('tasks'));
@@ -422,7 +429,7 @@ assert.equal(page.runsText('linux'), '在 GitHub Actions 上干');
 assert.equal(page.sizeText(512), '512 B');
 assert.equal(page.sizeText(2048), '2.0 KB');
 page.thread = { ...page.thread, id: 't_0123456789', loaded: true };
-const files = { 'index.html': '<h1>你好</h1><script>1</script>', 'notes.md': '# 笔记', 'logo.png': '\x89PNG', 'blob.bin': '\u0000\u0001' };
+const files = { 'index.html': '<h1>你好</h1><script>1</script>', 'notes.md': '# 笔记', 'logo.png': '\x89PNG', 'voice/hello.mp3': 'ID3\u0003', 'clip.mp4': '\u0000ftyp', 'blob.bin': '\u0000\u0001' };
 const fetched = [];
 page.api = async (path, options) => {
   fetched.push(path);
@@ -439,6 +446,13 @@ assert.equal(page.fileView.kind, 'markdown');
 await page.viewFile({ path: 'logo.png', size: 4 });
 assert.equal(page.fileView.kind, 'image');
 assert.match(page.fileView.url, /^blob:/);
+// Sounds and videos play in place (an API a thread called made them).
+await page.viewFile({ path: 'voice/hello.mp3', size: 4 });
+assert.equal(page.fileView.kind, 'audio');
+assert.match(page.fileView.url, /^blob:/);
+await page.viewFile({ path: 'clip.mp4', size: 4 });
+assert.equal(page.fileView.kind, 'video');
+assert.ok(html.includes('<audio class="file-media" controls :src="fileView.url"></audio>') && html.includes('<video class="file-media" controls playsinline :src="fileView.url"></video>'));
 await page.viewFile({ path: 'blob.bin', size: 2 });
 assert.equal(page.fileView.kind, 'other');
 assert.equal(page.fileView.text, '');
@@ -465,7 +479,8 @@ page.view = 'thread';
 assert.equal(page.backText(), '回到线程');
 page.view = 'chat';
 console.log('PASS threads: files come as bytes and show as text, a picture, or a page in a sandboxed frame');
-// Keys for sites web_fetch reads: counted in the 搜网和读网页 row, only while reading pages is on.
+// Keys for sites web_fetch reads (and threads' API calls): counted in the 搜网和读网页 row while reading pages is on, or
+// threads can call APIs.
 page.config = { fields: [
   { key: 'WEB_SEARCH', kind: 'choice', value: '', fromWorker: '', choices: ['on', 'off'] },
   { key: 'WEB_FETCH', kind: 'choice', value: '', fromWorker: '', choices: ['on', 'off'] }
@@ -476,8 +491,19 @@ page.sites = [{ host: 'gated.example', names: ['CF-Access-Client-Id', 'CF-Access
 assert.equal(page.sectionSummary('web'), '搜网开 · 读网页开 · 1 个网站带钥匙');
 page.config.fields[1].value = 'off';
 assert.equal(page.sectionSummary('web'), '搜网开 · 读网页关');
-assert.ok(html.includes('x-if="configSection === \'web\' && inEffect(metaOf(\'WEB_FETCH\')) !== \'off\'"') && html.includes('sitePreset(\'access\')'));
-console.log('PASS keys for sites: counted in the 搜网和读网页 row while reading pages is on');
+assert.equal(page.threadApis(), false);
+// Page reading off, threads calling APIs on: the keys still show, since the threads use them.
+page.config.fields.push(
+  { key: 'CLOUD_TASKS', kind: 'choice', value: 'on', fromWorker: '', choices: ['on', 'off'] },
+  { key: 'CLOUD_TASK_HTTP', kind: 'choice', value: 'on', fromWorker: '', choices: ['on', 'off'] }
+);
+assert.equal(page.threadApis(), true);
+assert.equal(page.sectionSummary('web'), '搜网开 · 读网页关 · 1 个网站带钥匙');
+page.config.fields[2].value = 'off';
+assert.equal(page.threadApis(), false, 'not without background help');
+assert.ok(html.includes('x-if="configSection === \'web\' && (inEffect(metaOf(\'WEB_FETCH\')) !== \'off\' || threadApis())"') && html.includes('sitePreset(\'access\')'));
+assert.match(html, /读那个网站、线程调它的 API 时自动带上/);
+console.log('PASS keys for sites: counted in the 搜网和读网页 row while reading pages is on, or threads can call APIs');
 // The key is typed as name : value rows; the page joins them into the lines the resident reads.
 page.siteDraft = { site: 'gated.example', lines: [{ name: '', value: '' }] };
 assert.equal(page.siteKeyText(), '', 'nothing typed yet');

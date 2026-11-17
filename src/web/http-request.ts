@@ -259,7 +259,11 @@ async function saveBytes(save: SaveFile, name: (ext: string) => string, bytes: U
   return problem ? `Not saved: ${problem}` : `Saved as ${path} (${size(kept.length)}${bare ? `, ${bare}` : ""}).`;
 }
 
-/** Bare PCM (Gemini's speech, audio/L16;rate=24000) put in a WAV, so it plays; null for anything else. */
+/**
+ * Bare 16-bit PCM put in a WAV, so it plays; null for anything else. Gemini's speech says
+ * audio/L16;codec=pcm;rate=24000 but is little-endian, as WAV is: it goes in as it is. Only a bare audio/L16 (RFC
+ * 2586, network order) is swapped.
+ */
 function pcmAsWav(bytes: Uint8Array, type: string): Uint8Array | null {
   if (!/^audio\/(l16|pcm)\b/i.test(type)) return null;
   const rate = Number(/rate=(\d+)/i.exec(type)?.[1] ?? 24000);
@@ -280,12 +284,9 @@ function pcmAsWav(bytes: Uint8Array, type: string): Uint8Array | null {
   view.setUint16(34, 16, true);
   text(36, "data");
   view.setUint32(40, bytes.length, true);
-  // L16 is big-endian, WAV little-endian; Gemini's "pcm" is already little-endian.
-  const big = /^audio\/l16/i.test(type);
-  for (let i = 0; i + 1 < bytes.length; i += 2) {
-    wav[44 + i] = big ? bytes[i + 1] : bytes[i];
-    wav[45 + i] = big ? bytes[i] : bytes[i + 1];
-  }
+  const big = /^audio\/l16/i.test(type) && !/codec=pcm/i.test(type);
+  if (!big) wav.set(bytes, 44);
+  else for (let i = 0; i + 1 < bytes.length; i += 2) [wav[44 + i], wav[45 + i]] = [bytes[i + 1], bytes[i]];
   return wav;
 }
 

@@ -19,7 +19,8 @@ rmSync(dir, { recursive: true, force: true });
 const PUBLIC = "93.184.216.34";
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(6000).fill(7)]);
 const MP3 = new Uint8Array([0x49, 0x44, 0x33, 3, 0, 0, ...new Array(100).fill(1)]);
-const PCM = new Uint8Array(6000).map((_, i) => i % 256);
+// Little-endian samples, as Gemini sends them: 0x1234, 0x5678, then a ramp.
+const PCM = new Uint8Array(6000).map((_, i) => [0x34, 0x12, 0x78, 0x56][i] ?? i % 256);
 const b64 = (bytes) => Buffer.from(bytes).toString("base64");
 const SECRET = "sk-test-0123456789abcdef";
 const KEYS = [
@@ -35,6 +36,7 @@ const routes = {
   "https://api.example.com/v1/b64": () => Response.json({ data: [{ b64_json: b64(PNG) }, { b64_json: b64(PNG) }], usage: { tokens: 3 } }),
   "https://gemini.example.com/v1/tts": () =>
     Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "audio/L16;codec=pcm;rate=24000", data: b64(PCM) } }] } }] }),
+  "https://api.example.com/v1/l16": () => new Response(new Uint8Array([0x12, 0x34, 0x56, 0x78]), { headers: { "content-type": "audio/L16; rate=8000" } }),
   "https://gemini.example.com/v1/dataurl": () => Response.json({ image: `data:image/webp;base64,${b64(new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, ...new Array(4000).fill(2)]))}` }),
   "https://api.example.com/v1/long": () => new Response("长".repeat(20_000), { headers: { "content-type": "text/plain; charset=utf-8" } }),
   "https://api.example.com/v1/huge": () => new Response(new Uint8Array(11 * 1024 * 1024), { headers: { "content-type": "video/mp4" } }),
@@ -157,8 +159,16 @@ await step("Gemini's bare PCM speech is saved as a WAV that plays, and a data: U
   const view = new DataView(wav.buffer, wav.byteOffset);
   assert.equal(view.getUint32(24, true), 24000, "its rate");
   assert.equal(view.getUint32(40, true), PCM.length);
-  assert.deepEqual([wav[44], wav[45]], [PCM[1], PCM[0]], "L16 is big-endian, WAV little");
+  assert.deepEqual(wav.subarray(44), PCM, "Gemini's samples are little-endian already: they go in as they are");
+  assert.deepEqual([view.getInt16(44, true), view.getInt16(46, true)], [0x1234, 0x5678], "so the values stay");
   assert.match(out, /audio\/wav/);
+
+  // A bare audio/L16 (RFC 2586) is in network order: swapped into WAV's.
+  const bare = files();
+  await run(bare, { url: "https://api.example.com/v1/l16" });
+  const plain = [...bare.saved.values()][0];
+  assert.equal(new DataView(plain.buffer, plain.byteOffset).getUint32(24, true), 8000);
+  assert.deepEqual([...plain.subarray(44)], [0x34, 0x12, 0x78, 0x56]);
 
   const webp = files();
   await run(webp, { url: "https://gemini.example.com/v1/dataurl" });
