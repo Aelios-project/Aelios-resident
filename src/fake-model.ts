@@ -102,6 +102,13 @@ function decide(options: LanguageModelV4CallOptions): { text: string; delayMs?: 
       if (rounds === 0) return { tool: "read", input: { path: "/draft.txt" } };
       return { text: `读回来了：${textOf(last.content)}` };
     }
+    // A wait on a slow job came back (thread-wait.ts): the thread says what it got.
+    if (user.includes("The request you waited on")) return { text: `等到了：${user.split("\n").slice(3).join(" ")}` };
+    // A slow job: the status URL and when it is done, from the job; the turn ends on the wait.
+    if (user.includes("http-wait-test") && rounds === 0) {
+      const [, url, until] = user.match(/http-wait-test (\S+) (\S+)/) ?? [];
+      return { tool: "http_request", input: { url, wait_until: until } };
+    }
     // http_request, when 「线程能调 API」 gives it: one call to the address in the job, then what came back.
     if (user.includes("http-request-test")) {
       if (!(options.tools ?? []).some((t) => t.type === "function" && t.name === "http_request")) return { text: "没有 http_request。" };
@@ -168,6 +175,7 @@ function decide(options: LanguageModelV4CallOptions): { text: string; delayMs?: 
   // A file handed over in the chat (made-files.ts): no extension given, so it becomes .md.
   if (said.includes("做个文件")) return { tool: "make_file", input: { name: "周末/计划", content: "# 周末计划\n\n- 去公园\n- 早点睡" } };
   if (said.includes("派四单")) return { tool: "cloud_task", input: { ...cloudJob("第 1 单"), ...where } };
+  if (said.includes("后台等接口")) return { tool: "cloud_task", input: { title: "等接口测试", job: `http-wait-test ${said.split("后台等接口")[1].trim()}`, execution: "local" } };
   if (said.includes("后台调接口")) return { tool: "cloud_task", input: { title: "调接口测试", job: `http-request-test ${said.split("后台调接口")[1].trim()}`, execution: "local" } };
   if (said.includes("后台写文件")) return { tool: "cloud_task", input: { title: "工作区写入测试", job: "workspace-write-test", execution: "local" } };
   if (said.includes("后台接着读")) return { tool: "cloud_task", input: { title: "工作区读取测试", job: "workspace-read-test", execution: "local", follow_up_of: said.match(/t_[0-9a-f]{10}/)?.[0] } };

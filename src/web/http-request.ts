@@ -10,7 +10,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { headersFor, isAccessSignIn, type SiteKey } from "./site-keys";
-import { validateUrlWithDns } from "./validate-url";
+import { validateUrl, validateUrlWithDns } from "./validate-url";
 
 // The size a thread's file may be (task-worker.ts THREAD_FILE_MAX), so the size of an answer.
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -33,27 +33,51 @@ export const HTTP_REQUEST_DESCRIPTION =
   "or video, or any other JSON API. A picture, sound or video that comes back is saved as one of your files (so is a " +
   "long base64 string in a JSON answer), and you get its name: name the file in your report. Text comes back as it is.";
 
-export function httpRequestTool(keys: readonly SiteKey[], save: SaveFile) {
+/** A slow job to wait on (thread-wait.ts): its status URL, asked again until the JSON answer says it is done. */
+export type WaitRequest = { url: string; headers: Record<string, string>; until: string };
+
+/** What starts a wait, and what the tool says when it has started one: the thread's turn ends on it (task-worker.ts). */
+export type StartWait = (request: WaitRequest) => Promise<string>;
+export const WAITING = "Waiting:";
+
+export function httpRequestTool(keys: readonly SiteKey[], save: SaveFile, wait?: StartWait) {
   const keyed = keys.map((key) => key.host);
   return tool({
     description:
       HTTP_REQUEST_DESCRIPTION +
+      " For a job that takes minutes (a video), GET its status URL with wait_until: you are woken with the answer once it is done." +
       (keyed.length ? ` They gave you keys for ${keyed.join(", ")}: requests there carry them, so leave the key out.` : " They gave you no keys for any site."),
     inputSchema: z.object({
       method: z.enum(["GET", "POST"]).optional().describe("GET unless you send a body."),
       url: z.string().describe("The full https URL."),
       headers: z.record(z.string(), z.string()).optional().describe("Headers the API needs besides its key, such as a version header."),
       body: z.string().optional().describe("With POST: the body, usually JSON text (sent as application/json unless headers say otherwise)."),
-      save_as: z.string().optional().describe("A path for the file, such as /voice/hello.mp3. Optional: one is picked for you.")
+      save_as: z.string().optional().describe("A path for the file, such as /voice/hello.mp3. Optional: one is picked for you."),
+      wait_until: z
+        .string()
+        .optional()
+        .describe(
+          "With a GET of a slow job's status URL: when its JSON answer is done, as field=value, a.b=x|y for either (done=true, " +
+            "status=completed|failed). The resident asks again every 20 seconds, up to 15 minutes, without you; this turn ends and " +
+            "a new one brings you the answer."
+        )
     }),
-    execute: async ({ method = "GET", url, headers, body, save_as }) => {
+    execute: async ({ method = "GET", url, headers, body, save_as, wait_until }) => {
       if (method === "GET" && body) return "A GET has no body: use POST.";
-      const check = await validateUrlWithDns(url);
-      if (!check.valid) return `Cannot call this URL: ${check.error}`;
       const name = namer(save_as);
       if (save_as && !name) return "save_as must be a plain path such as /voice/hello.mp3, without .. or hidden folders.";
+      if (wait_until?.trim()) {
+        if (!wait) return "Waiting is not available here: GET the status URL yourself now and then.";
+        if (method !== "GET") return "wait_until goes with a GET of the job's status URL.";
+        if (!condition(wait_until)) return "wait_until is field=value, or a.b=x|y for either, such as done=true or status=completed|failed.";
+        // Only what can be told without asking DNS; every check asks it again.
+        const check = validateUrl(url);
+        if (!check.valid) return `Cannot call this URL: ${check.error}`;
+        return wait({ url, headers: headers ?? {}, until: wait_until.trim() });
+      }
       try {
-        return await call({ method, url, headers: headers ?? {}, body, keys, save, name: name!, asked: Boolean(save_as?.trim()) });
+        const answer = await send({ method, url, headers: headers ?? {}, body, keys });
+        return typeof answer === "string" ? answer : await present(answer, keys, save, name!, Boolean(save_as?.trim()));
       } catch (error) {
         return `The request failed: ${error instanceof Error ? error.message : String(error)}`;
       }
@@ -61,21 +85,15 @@ export function httpRequestTool(keys: readonly SiteKey[], save: SaveFile) {
   });
 }
 
-type Call = {
-  method: "GET" | "POST";
-  url: string;
-  headers: Record<string, string>;
-  body?: string;
-  keys: readonly SiteKey[];
-  save: SaveFile;
-  name: (ext: string) => string;
-  /** Whether they named the file: a text answer is then saved too. */
-  asked: boolean;
-};
+/** What came back, before anything is made of it. */
+export type Answer = { status: number; head: string; type: string; bytes: Uint8Array | null };
 
-async function call({ method, url, headers, body, keys, save, name, asked }: Call): Promise<string> {
-  const signal = AbortSignal.timeout(TIMEOUT_MS);
+/** Sends the request (following a GET's redirects); a message instead when it could not be sent or followed. */
+export async function send({ method, url, headers, body, keys }: { method: "GET" | "POST"; url: string; headers: Record<string, string>; body?: string; keys: readonly SiteKey[] }): Promise<Answer | string> {
   const dns = new Map<string, Promise<string[]>>();
+  const first = await validateUrlWithDns(url, dns);
+  if (!first.valid) return `Cannot call this URL: ${first.error}`;
+  const signal = AbortSignal.timeout(TIMEOUT_MS);
   let current = url;
   let key = headersFor(keys, current);
   let response: Response;
@@ -101,8 +119,12 @@ async function call({ method, url, headers, body, keys, save, name, asked }: Cal
   }
   const type = (response.headers.get("content-type") ?? "").toLowerCase();
   const refused = key && (response.status === 401 || response.status === 403) ? " (the site refused the key)" : "";
-  const head = `HTTP ${response.status}${refused}${type ? ` · ${type.split(";")[0]}` : ""}`;
-  const bytes = await readAll(response);
+  return { status: response.status, type, head: `HTTP ${response.status}${refused}${type ? ` · ${type.split(";")[0]}` : ""}`, bytes: await readAll(response) };
+}
+
+/** The answer as the model gets it: files saved, keys wiped, long text cut. `asked`: they named the file, so text is saved too. */
+export async function present(answer: Answer, keys: readonly SiteKey[], save: SaveFile, name: (ext: string) => string, asked: boolean): Promise<string> {
+  const { head, type, bytes } = answer;
   if (!bytes) return `${head}\nThe answer is over ${MAX_BYTES / 1024 / 1024} MB: ask for a smaller one.`;
   if (!bytes.length) return `${head}\n(an empty answer)`;
   const sniffed = sniff(bytes);
@@ -110,16 +132,14 @@ async function call({ method, url, headers, body, keys, save, name, asked }: Cal
     const file = await saveBytes(save, name, bytes, sniffed ?? type);
     return `${head}\n${file}`;
   }
-  let text = scrub(new TextDecoder().decode(bytes), secretsOf(keys));
+  let text = answerText(answer, keys);
   // A JSON answer with files in it: each one saved under the answer's names, and its name in its place.
   const pulled = { saved: [] as string[], left: FILES_PER_ANSWER };
-  if (type.includes("json") || /^\s*[[{]/.test(text)) {
-    try {
-      const value = await pullFiles(JSON.parse(text), save, name, pulled);
-      if (pulled.saved.length) text = JSON.stringify(value);
-    } catch {
-      // Not JSON after all: it goes as text.
-    }
+  const json = type.includes("json") || /^\s*[[{]/.test(text) ? parsed(text) : undefined;
+  if (json !== undefined) {
+    // A save that fails throws, rather than the answer going on as if it held no files.
+    const value = await pullFiles(json, save, name, pulled);
+    if (pulled.saved.length) text = JSON.stringify(value);
   }
   const short = text.length <= MAX_CHARS;
   if (short && !(asked && !pulled.saved.length)) return `${head}\n${text}`;
@@ -129,6 +149,33 @@ async function call({ method, url, headers, body, keys, save, name, asked }: Cal
   const problem = await save(path, whole);
   const kept = problem ? `Not saved: ${problem}` : `Saved as ${path} (${size(whole.length)}).`;
   return short ? `${head}\n${text}\n\n${kept}` : `${head}\n${text.slice(0, MAX_CHARS)}\n\n[cut off here] ${kept}`;
+}
+
+/** A text answer's words, with every key wiped. */
+function answerText(answer: Answer, keys: readonly SiteKey[]): string {
+  return scrub(new TextDecoder().decode(answer.bytes ?? new Uint8Array()), secretsOf(keys));
+}
+
+/** wait_until read: the field's path and the values that mean done; null when it is not field=value. */
+export function condition(text: string): { path: string[]; values: string[] } | null {
+  const match = /^\s*([A-Za-z0-9_$-]+(?:\.[A-Za-z0-9_$-]+)*)\s*=\s*(\S(?:.*\S)?)\s*$/.exec(text);
+  if (!match) return null;
+  const values = match[2].split("|").map((value) => value.trim().toLowerCase()).filter(Boolean);
+  return values.length ? { path: match[1].split("."), values } : null;
+}
+
+/** Whether a JSON answer has reached wait_until. */
+export function reached(answer: Answer, until: string): boolean {
+  const wanted = condition(until);
+  if (!wanted || !answer.bytes) return false;
+  let value: unknown;
+  try {
+    value = JSON.parse(new TextDecoder().decode(answer.bytes));
+  } catch {
+    return false;
+  }
+  for (const part of wanted.path) value = value && typeof value === "object" ? (value as Record<string, unknown>)[part] : undefined;
+  return (typeof value === "string" || typeof value === "number" || typeof value === "boolean") && wanted.values.includes(String(value).toLowerCase());
 }
 
 function requestHeaders(own: Record<string, string>, key: Record<string, string> | null, body: string | undefined): Headers {
@@ -250,6 +297,15 @@ export function namer(saveAs: string | undefined): ((ext: string) => string) | n
 }
 
 /** Saves the bytes under the next name; what to tell the model. */
+/** The JSON in a text; undefined when it is not JSON after all (it then goes as text). */
+function parsed(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
 async function saveBytes(save: SaveFile, name: (ext: string) => string, bytes: Uint8Array, type: string): Promise<string> {
   const wav = pcmAsWav(bytes, type);
   const kept = wav ?? bytes;

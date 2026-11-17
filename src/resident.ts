@@ -206,6 +206,7 @@ import { DEFAULT_COMPRESS_MODEL, type Compressor } from "./web/compress";
 import { readerFor, webFetchTool, webFetchVia, type Page, type PageCache } from "./web/fetch";
 import { SiteKeyStore } from "./web/site-keys";
 import { httpRequestTool } from "./web/http-request";
+import { checkWait, startWait, submissionOf, type Wait, type WaitHost } from "./thread-wait";
 import { searchEngines, searchSource } from "./web/search";
 import { MEMORY_HEADER, aeliosModel, listModels, onMessages, type AeliosModel, type Thinking } from "./via-aelios";
 import { effortOf } from "./thinking";
@@ -1863,6 +1864,32 @@ export class Resident extends Think<Env> {
     return problem ? { status: 429, body: { error: problem } } : { status: 200, body: { ok: true } };
   }
 
+  /** What a thread's wait on a slow job needs (thread-wait.ts). */
+  private waitHost(): WaitHost {
+    const store = this.cloudTasks();
+    const thread = async (task: Task) => await this.dynamicAgents.get(TaskWorker, threadName(task.root));
+    return {
+      load: (id) => this.ctx.storage.get<Wait>(`thread_wait:${id}`),
+      store: (id, wait) => this.ctx.storage.put(`thread_wait:${id}`, wait),
+      later: async (id, round, seconds) => void (await this.schedule(seconds, "threadWaitCheck", { id, round })),
+      working: (id) => {
+        const task = store.get(id);
+        return task && (task.status === "sent" || task.status === "working") ? task : null;
+      },
+      keys: () => this.siteKeys().all(),
+      save: (task, path, bytes) => this.keepTaskFile(task, path, bytes),
+      progress: async (task, line) => void (await this.taskReport(task.id, store.codeOf(task.id) ?? "", "progress", { line })),
+      wake: async (task, submission, brief) => {
+        await (await thread(task)).enqueue({ id: task.id, code: store.codeOf(task.id) ?? "", brief, submission });
+      }
+    };
+  }
+
+  /** Scheduled while a thread waits on a slow job: one more look at it (thread-wait.ts). */
+  async threadWaitCheck(payload: { id: string; round: number }): Promise<void> {
+    await checkWait(this.waitHost(), payload.id, payload.round);
+  }
+
   /** Keeps a file a task made among its thread's files, within the task's share; why not, when it cannot. */
   private async keepTaskFile(task: Task, path: string, bytes: Uint8Array): Promise<string | null> {
     const sent = (await this.ctx.storage.get<{ files: number; bytes: number }>(`hands_files:${task.id}`)) ?? { files: 0, bytes: 0 };
@@ -1899,7 +1926,9 @@ export class Resident extends Think<Env> {
       });
     }
     if (this.webFetchOn()) tools.web_fetch = webFetchTool(readerFor(this.cfg, this.compressor(), this.pageCache(), this.siteKeys().all()));
-    if (this.threadHttpOn()) tools.http_request = httpRequestTool(this.siteKeys().all(), (path, bytes) => this.keepTaskFile(task, path, bytes));
+    if (this.threadHttpOn()) {
+      tools.http_request = httpRequestTool(this.siteKeys().all(), (path, bytes) => this.keepTaskFile(task, path, bytes), (request) => startWait(this.waitHost(), task, request));
+    }
     Object.assign(tools, this.mcpTools());
     tools.report_progress = tool({
       description: "Send one short progress line in the job's language while you work.",
@@ -1963,8 +1992,12 @@ export class Resident extends Think<Env> {
     this.recordUsage(step, { kind: "worker", via: "" });
   }
 
-  async taskWorkerFinished(id: string, code: string, result: unknown): Promise<void> {
+  async taskWorkerFinished(id: string, code: string, result: unknown, submission?: string): Promise<void> {
     const task = this.workerTask(id, code);
+    // A turn that ended to wait on a slow job: the task is still at work, and the turn the wait wakes brings the
+    // answer (that one counts, even if it ends before the wait has noted that it woke it).
+    const wait = await this.ctx.storage.get<Wait>(`thread_wait:${id}`);
+    if (wait?.pending && submission !== submissionOf(id, wait)) return;
     if (["sent", "working", "quiet"].includes(task.status)) await this.taskReport(id, code, "result", result);
   }
 
@@ -2011,9 +2044,13 @@ export class Resident extends Think<Env> {
     const pending = store.get(payload.id);
     if (pending?.runs === "local" && (pending.status === "sent" || pending.status === "working")) {
       const code = store.codeOf(pending.id) ?? "";
-      const report = this.dynamicAgents.has(TaskWorker, threadName(pending.root))
-        ? await (await this.dynamicAgents.get(TaskWorker, threadName(pending.root))).finishedReport(pending.id).catch(() => null)
-        : { status: "failed", summary: "线程没开起来。" };
+      // Waiting on a slow job is still being at work; after one, its latest turn is the one to look at.
+      const wait = await this.ctx.storage.get<Wait>(`thread_wait:${pending.id}`);
+      const report = wait?.pending
+        ? null
+        : this.dynamicAgents.has(TaskWorker, threadName(pending.root))
+          ? await (await this.dynamicAgents.get(TaskWorker, threadName(pending.root))).finishedReport(submissionOf(pending.id, wait)).catch(() => null)
+          : { status: "failed", summary: "线程没开起来。" };
       if (report) {
         await this.taskWorkerFinished(pending.id, code, report);
         return;

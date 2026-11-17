@@ -231,6 +231,7 @@ export function localStepProgress(toolName: string, input: unknown): string | nu
   if (toolName === "http_request") {
     // Host and path only: what follows ? is not shown.
     const url = oneLine(args.url, 200).split(/[?#]/)[0].replace(/^https?:\/\//, "").slice(0, 100);
+    if (args.wait_until) return url ? `在等结果：${url}` : "在等结果";
     return url ? `正在调接口：${url}` : "正在调接口";
   }
   if (toolName === "memory_recall") {

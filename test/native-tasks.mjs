@@ -80,8 +80,20 @@ if (process.argv[2] !== 'restart') {
   const called = await say('后台调接口 http://localhost:8787/web/config');
   assert.match((await waitTask(called.id)).summary, /Cannot call this URL/, 'a local address is refused');
   assert.ok((await api(`/web/thread?id=${called.id}`)).lines.some(l => l.steps.includes('正在调接口：localhost:8787/web/config')));
-  await set({ CLOUD_TASK_HTTP: '' });
   console.log('PASS a thread here calls an API only with CLOUD_TASK_HTTP on, through the resident, never to a local address');
+
+  // wait_until (thread-wait.ts): the thread's turn ends on the wait, the task stays at work, and about 20 seconds later
+  // the resident's check wakes the thread in a new turn with the answer (here: a name that cannot be looked up).
+  const waiting = await say('后台等接口 https://wait.invalid/status done=true');
+  await new Promise(resolve => setTimeout(resolve, 3000));
+  const mid = (await api('/web/tasks')).tasks.find(t => t.id === waiting.id);
+  assert.deepEqual([mid.status, mid.progress], ['working', '在等结果：wait.invalid/status'], 'still at work while it waits');
+  const woken = await waitTask(waiting.id);
+  assert.match(woken.summary, /^等到了：The request you waited on came back after 1 check .*Cannot call this URL/);
+  const waited = await api(`/web/thread?id=${waiting.id}`);
+  assert.deepEqual(waited.lines.map(l => l.role), ['user', 'assistant', 'user', 'assistant', 'result'], 'the wait, the wake, and one report');
+  await set({ CLOUD_TASK_HTTP: '' });
+  console.log('PASS a thread waits on a slow job without the model and is woken in a new turn with its answer');
 
   // cloud_task is the same whatever is set up; a job that needs a shell is not sent when no place has one.
   await set({ CLOUD_TASK_GITHUB_TOKEN: '' });
