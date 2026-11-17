@@ -73,6 +73,16 @@ if (process.argv[2] !== 'restart') {
   assert.equal(await page.text(), '<h1>知来</h1>');
   console.log('PASS a run on GitHub Actions hands its files back: kept with the thread, shown on its report, opened from the web page');
 
+  // http_request (web/http-request.ts): a thread here has it only with 「线程能调 API」 on, and its call runs on the resident.
+  const without = await waitTask((await say('后台调接口 http://localhost:8787/web/config')).id);
+  assert.match(without.summary, /没有 http_request/, 'off by default');
+  await set({ CLOUD_TASK_HTTP: 'on' });
+  const called = await say('后台调接口 http://localhost:8787/web/config');
+  assert.match((await waitTask(called.id)).summary, /Cannot call this URL/, 'a local address is refused');
+  assert.ok((await api(`/web/thread?id=${called.id}`)).lines.some(l => l.steps.includes('正在调接口：localhost:8787/web/config')));
+  await set({ CLOUD_TASK_HTTP: '' });
+  console.log('PASS a thread here calls an API only with CLOUD_TASK_HTTP on, through the resident, never to a local address');
+
   // cloud_task is the same whatever is set up; a job that needs a shell is not sent when no place has one.
   await set({ CLOUD_TASK_GITHUB_TOKEN: '' });
   const count = (await api('/web/tasks')).tasks.length;

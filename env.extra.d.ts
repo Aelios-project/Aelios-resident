@@ -62,6 +62,8 @@ interface Env {
   CLOUD_TASK_GITHUB_TOKEN?: string;
   // The threads' model, here and on GitHub Actions; empty uses Workers AI's glm-4.7-flash.
   CLOUD_TASK_MODEL?: string;
+  // "on" gives threads here http_request (web/http-request.ts), with the keys of 带钥匙的网站.
+  CLOUD_TASK_HTTP?: string;
   // Local tests only: where api.anthropic.com and api.github.com are reached instead, and how many minutes before a task is quiet.
   CLOUD_TASK_API_BASE?: string;
   CLOUD_TASK_QUIET_MINUTES?: string;

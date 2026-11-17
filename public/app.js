@@ -184,6 +184,8 @@ function resident() {
     { id: 'tasks', title: '后台帮忙', hint: '查资料、写东西这类活交给线程，做完回来告诉你。', fields: [
       { key: 'CLOUD_TASKS', label: '让它后台帮忙', def: 'off', labels: ON_OFF, help: '打开就能用，线程跑在住户自己这里，不能跑代码。' },
       { key: 'CLOUD_TASK_GITHUB_TOKEN', label: 'GitHub token', needs: 'CLOUD_TASKS', help: '可不填。填了能跑代码、开 PR，仓库住户自己建。' },
+      { key: 'CLOUD_TASK_HTTP', label: '线程能调 API', def: 'off', labels: ON_OFF, needs: 'CLOUD_TASKS',
+        help: '生图、语音这类 API，钥匙填在「带钥匙的网站」。出来的图和声音存成线程的文件。' },
       { key: 'CLOUD_TASK_MODEL', label: '线程用哪个模型', needs: 'CLOUD_TASKS',
         help: '留空用 Workers AI 的 glm-4.7-flash，每天有免费额度。',
         picks: ['anthropic/claude-haiku-5.5', 'anthropic/claude-sonnet-5.5'],
@@ -310,8 +312,10 @@ function resident() {
   // Her lines from the server that already took the place of one sent from here.
   var settled = {};
   var seq = 0;
-  // A thread's files the page shows as pictures; anything else that reads as text shows as text.
+  // A thread's files the page shows as pictures, sounds and videos; anything else that reads as text shows as text.
   var IMAGE_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' };
+  var AUDIO_TYPES = { mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', opus: 'audio/ogg', m4a: 'audio/mp4', aac: 'audio/aac', flac: 'audio/flac' };
+  var VIDEO_TYPES = { mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime' };
   var extOf = function (path) { var m = String(path).match(/\.([A-Za-z0-9]+)$/); return m ? m[1].toLowerCase() : ''; };
 
   return Object.assign({
@@ -1941,9 +1945,10 @@ function resident() {
         var kind = 'other';
         var text = '';
         var url = '';
-        if (IMAGE_TYPES[ext]) {
-          kind = 'image';
-          url = URL.createObjectURL(new Blob([bytes], { type: IMAGE_TYPES[ext] }));
+        var media = IMAGE_TYPES[ext] ? 'image' : AUDIO_TYPES[ext] ? 'audio' : VIDEO_TYPES[ext] ? 'video' : '';
+        if (media) {
+          kind = media;
+          url = URL.createObjectURL(new Blob([bytes], { type: IMAGE_TYPES[ext] || AUDIO_TYPES[ext] || VIDEO_TYPES[ext] }));
         } else {
           try {
             text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
@@ -2158,6 +2163,10 @@ function resident() {
       var f = this.field(meta.key);
       if (!f || choice === this.inEffect(meta)) return;
       this.saveConfig(meta.key, choice === (f.fromWorker.toLowerCase() || meta.def) ? '' : choice);
+    },
+    // Threads call APIs (CLOUD_TASK_HTTP) with the keys of 带钥匙的网站, so the keys show even with page reading off.
+    threadApis() {
+      return this.inEffect(this.metaOf('CLOUD_TASKS')) === 'on' && this.inEffect(this.metaOf('CLOUD_TASK_HTTP')) === 'on';
     },
     // A setting that only matters once another is on (the voice ones once a provider is picked).
     shown(meta) {
@@ -2463,13 +2472,13 @@ function resident() {
           return '开 · ' + (this.stickers.packs.length ? this.stickers.packs.length + ' 个包' : '还没有包');
         case 'web':
           return '搜网' + (this.inEffect(this.metaOf('WEB_SEARCH')) === 'off' ? '关' : '开') + ' · 读网页' + choice('WEB_FETCH')
-            + (this.sites.length && this.inEffect(this.metaOf('WEB_FETCH')) !== 'off' ? ' · ' + this.sites.length + ' 个网站带钥匙' : '');
+            + (this.sites.length && (this.inEffect(this.metaOf('WEB_FETCH')) !== 'off' || this.threadApis()) ? ' · ' + this.sites.length + ' 个网站带钥匙' : '');
         case 'mcp':
           return this.mcp.servers.length ? this.mcp.servers.map(function (server) { return server.name; }).join('、') : '没接';
         case 'tasks':
           if (this.inEffect(this.metaOf('CLOUD_TASKS')) !== 'on') return '关';
           var hands = { local: '自己的线程', linux: '自己的线程 + GitHub Actions' }[this.cloud.mode] || '开';
-          return hands + ' · 24 小时内派了 ' + this.cloud.today + ' 单';
+          return hands + (this.threadApis() ? ' · 能调 API' : '') + ' · 24 小时内派了 ' + this.cloud.today + ' 单';
         case 'thinking':
           return this.letterWriteStatus() + ' · ' + this.letterDeliveryCounts();
         case 'custom':

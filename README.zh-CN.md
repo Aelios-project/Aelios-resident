@@ -364,7 +364,7 @@ Aelios-resident 是为 Aelios 做的，一定要接 Aelios 才能用。不打算
   - 读过的页面留 1 小时，再问不用重抓。
   - 长页面先用一个便宜的模型压一遍（`WEB_FETCH_MODEL`，默认 Workers AI 的 GLM-4.7-Flash）；带了问题的，只摘相关段落。这个模型出错时，只给页面正文开头几千字和一行说明。
   - GBK 之类的老编码也认。
-- **带钥匙的网站**：在设置页「搜网和读网页」里给某个网站存一把钥匙，思路跟云端环境的网络密钥一样：读那个网站时每个请求自动带上；模型看不到钥匙；别的网站（包括跳转去的）和 http 都拿不到。最多 10 个网站。
+- **带钥匙的网站**：在设置页「搜网和读网页」里给某个网站存一把钥匙，思路跟云端环境的网络密钥一样：读那个网站（以及打开「线程能调 API」后线程调它的 API）时每个请求自动带上；模型看不到钥匙；别的网站（包括跳转去的）和 http 都拿不到。最多 10 个网站。
   - 钥匙一行一格：左边名字、右边值，不够点 ＋ 加一行。「Cloudflare 门禁」「一串 token」两个按钮一点就填好名字，只要粘值。
   - **Cloudflare Access 挡着的网站**：在 Zero Trust → Access controls → Service credentials → Service Tokens 里建一个服务令牌（Client Secret 只显示一次，当场抄下）；给那个应用加一条动作为「Service Auth」、包含这个令牌的策略；设置页点「Cloudflare 门禁」，Client ID 和 Client Secret 各粘一格（连着前面的名字一起粘也行）。详见 [Cloudflare 的说明](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/)。没钥匙或钥匙不对时，它会说是门禁拦的，不会把登录页当正文。
   - **GitHub 私库的文件**：建一个 fine-grained token，只选要读的仓库，Contents 只读；网站填 `raw.githubusercontent.com`，点「一串 token」粘进去（会以 `Authorization: Bearer` 发出去）。之后叫它读 `https://raw.githubusercontent.com/<owner>/<repo>/<分支>/<路径>`。token 没勾上的私库，GitHub 回 404 而不是 403，它会提醒你可能是钥匙看不到。
@@ -456,6 +456,8 @@ Aelios-resident 是为 Aelios 做的，一定要接 Aelios 才能用。不打算
 - **GitHub Actions**（要跑命令、跑测试、开 PR 时）：有完整的 Linux，在住户替你在 GitHub 上建的一个私有仓库里跑。只要填一个 token。
 - **你自己的机器**（电脑或服务器）：用 [`aelios-runner`](https://github.com/Aelios-project/Aelios-desktop/tree/main/packages/runner)（在 Aelios-desktop 仓库里） 配对（后台帮忙 → 机器 → 生成配对码）。每条线程是那台机器上一个 ACP 帮手（Kiro、DeepSeek Harness 或别的）的会话，在固定的目录里干活，用哪个帮手、什么权限都由那台机器自己定。你在这种线程里说的话直接进它的会话（正在跑的一轮停下，用你的话重来）；线程的回话原样显示，住户只留一份记录，不再转述。需要你拍板时线程最后一行写 `ASK:`，线程就标成等你。机器不在线时派活当场被拒，不排队。
 住户自己这里和 GitHub Actions 上的线程用**线程的模型**：默认是 Workers AI 的 `@cf/zai-org/glm-4.7-flash`（每天有免费额度），想换就在「线程用哪个模型」里填（`CLOUD_TASK_MODEL`）。线程不会自己去用聊天的模型，贵的聊天模型不会花在跑腿上。
+
+**调 API**（「线程能调 API」，`CLOUD_TASK_HTTP`，默认关）：打开后住户这里的线程多一个 `http_request`，能发 GET 或带内容的 POST，调生图、语音、视频这类 API。每家的钥匙填在「带钥匙的网站」里（比如 `generativelanguage.googleapis.com` 填一行 `x-goog-api-key: …`，`api.openai.com` 直接粘一串 token）：只发给那个网站，回来的内容里有钥匙会抹掉。回来的图片、声音、视频，以及 JSON 里很长的 base64，都存成线程的文件（每个最多 10 MB），线程页上能直接看、直接播；Gemini 的裸 PCM 语音存成 WAV。聊天本身没有这个工具。
 
 网页聊天页右上角的「线程」按钮（它的页面里也有）列出所有线程。点开一条能看到：
 
@@ -570,6 +572,7 @@ GitHub 那边接着做时，每次都是新开的，上一单的结果只是参�
 | `VOICE_BASE_URL` | 空 | 一般不填；填了就不走 AI Gateway，直接发到这个地址 |
 | `CLOUD_TASKS` | `off` | `on` 打开后台帮忙：活交给线程 |
 | `CLOUD_TASK_GITHUB_TOKEN` | 空 | 选填：GitHub token（勾 `repo` 和 `workflow`），住户用它建私有仓库、在 GitHub Actions 上干活；可以存成 Cloudflare 的 Secret |
+| `CLOUD_TASK_HTTP` | `off` | `on` 让住户这里的线程用 `http_request` 调 API，钥匙用「带钥匙的网站」里的 |
 | `CLOUD_TASK_MODEL` | 空 | 线程用的模型（住户这里和 GitHub Actions 上都是），填模型选择器里认的名字；留空用 Workers AI 的 `@cf/zai-org/glm-4.7-flash` |
 | `AI_GATEWAY_ID` | 空（用 `default`） | 搜网、语音走哪个 AI Gateway |
 

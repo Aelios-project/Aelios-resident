@@ -823,6 +823,8 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
       <pre class="file-text" x-show="fileView.kind === 'text'" x-text="fileView.text"></pre>
       <div class="file-md md" x-show="fileView.kind === 'markdown'" x-markdown="fileView.text"></div>
       <img class="file-image" x-show="fileView.kind === 'image'" :src="fileView.url || ''" alt="">
+      <template x-if="fileView.kind === 'audio'"><audio class="file-media" controls :src="fileView.url"></audio></template>
+      <template x-if="fileView.kind === 'video'"><video class="file-media" controls playsinline :src="fileView.url"></video></template>
       <template x-if="fileView.kind === 'html'">
         <iframe class="file-page" sandbox="allow-scripts" referrerpolicy="no-referrer" :srcdoc="fileView.text" title="页面预览"></iframe>
       </template>
@@ -1060,10 +1062,10 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
           </div>
         </template>
 
-        <template x-if="configSection === 'web' && inEffect(metaOf('WEB_FETCH')) !== 'off'">
+        <template x-if="configSection === 'web' && (inEffect(metaOf('WEB_FETCH')) !== 'off' || threadApis())">
           <div class="section">
             <div class="label"><span>带钥匙的网站</span><button class="qmark" type="button" @click="toggleHelp('sites')" :aria-expanded="Boolean(helpOpen.sites)" aria-label="说明：带钥匙的网站">?</button></div>
-            <p class="help" x-show="helpOpen.sites">跟云端环境的网络密钥一样：钥匙挂在一个网站上，读那个网站时自动带上，模型看不到，别的网站也拿不到。只认 https。
+            <p class="help" x-show="helpOpen.sites">跟云端环境的网络密钥一样：钥匙挂在一个网站上，读那个网站、线程调它的 API 时自动带上，模型看不到，别的网站也拿不到。只认 https。
 
 左边名字、右边值，不够就点 ＋ 加一行。Cloudflare 门禁：点「Cloudflare 门禁」，服务令牌的 Client ID 和 Client Secret 各粘一格，还要在那个应用里加一条动作是 Service Auth 的策略。GitHub 私库：网站填 raw.githubusercontent.com，点「一串 token」，粘一个 Contents 只读的 fine-grained token。别在聊天里发钥匙。</p>
             <template x-for="site in sites" :key="site.host">

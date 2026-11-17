@@ -102,6 +102,12 @@ function decide(options: LanguageModelV4CallOptions): { text: string; delayMs?: 
       if (rounds === 0) return { tool: "read", input: { path: "/draft.txt" } };
       return { text: `读回来了：${textOf(last.content)}` };
     }
+    // http_request, when 「线程能调 API」 gives it: one call to the address in the job, then what came back.
+    if (user.includes("http-request-test")) {
+      if (!(options.tools ?? []).some((t) => t.type === "function" && t.name === "http_request")) return { text: "没有 http_request。" };
+      if (rounds === 0) return { tool: "http_request", input: { url: user.match(/http-request-test (\S+)/)?.[1] ?? "" } };
+      return { text: `调完了：${textOf(last.content)}` };
+    }
     if (user.includes("title: 接通测试")) {
       if (rounds === 0) return { tool: "report_progress", input: { line: "收到了" } };
       return { tool: "report_result", input: { status: "done", summary: "接通了" } };
@@ -162,6 +168,7 @@ function decide(options: LanguageModelV4CallOptions): { text: string; delayMs?: 
   // A file handed over in the chat (made-files.ts): no extension given, so it becomes .md.
   if (said.includes("做个文件")) return { tool: "make_file", input: { name: "周末/计划", content: "# 周末计划\n\n- 去公园\n- 早点睡" } };
   if (said.includes("派四单")) return { tool: "cloud_task", input: { ...cloudJob("第 1 单"), ...where } };
+  if (said.includes("后台调接口")) return { tool: "cloud_task", input: { title: "调接口测试", job: `http-request-test ${said.split("后台调接口")[1].trim()}`, execution: "local" } };
   if (said.includes("后台写文件")) return { tool: "cloud_task", input: { title: "工作区写入测试", job: "workspace-write-test", execution: "local" } };
   if (said.includes("后台接着读")) return { tool: "cloud_task", input: { title: "工作区读取测试", job: "workspace-read-test", execution: "local", follow_up_of: said.match(/t_[0-9a-f]{10}/)?.[0] } };
   if (said.includes("Linux派活")) return { tool: "cloud_task", input: { ...cloudJob("Linux测试"), execution: "linux" } };
