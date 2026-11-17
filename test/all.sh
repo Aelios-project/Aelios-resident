@@ -58,6 +58,7 @@ pair mcp "node test/run.mjs mcp" "node test/run.mjs mcp-2"
 for test in history-worker box-worker chat-stop-worker chat-permissions-worker; do fresh "$test" "node test/$test.mjs"; done
 fresh native-push-worker "node test/native-push-worker.mjs" --var FCM_SERVICE_ACCOUNT:not-json
 fresh mini-app-worker "node test/mini-app.mjs worker"
+fresh home-screen-worker "node test/home-screen.mjs worker"
 fresh alarm-activity-worker "node test/alarm-activity-worker.mjs" --var ALARM_MINUTE_SECONDS:0.5
 fresh letter-failures "node test/letter-failures.mjs"
 pair letter-restart "node test/letter-failures.mjs restart-1" "node test/letter-failures.mjs restart-2"

@@ -3006,7 +3006,7 @@ if (phase === "web") {
     const app = await fetch(`${WORKER}/manifest.webmanifest`);
     assert.match(app.headers.get("content-type"), /manifest\+json/);
     const manifest = await app.json();
-    assert.deepEqual([manifest.name, manifest.display, manifest.start_url], ["小助手", "standalone", "/"]);
+    assert.deepEqual([manifest.id, manifest.name, manifest.display, manifest.start_url], ["/", "小助手", "standalone", "/?r=default"]);
     assert.equal(manifest.icons[0].src, avatar);
     const notPicture = await fetch(`${WORKER}/web/avatar`, { method: "POST", headers: { "x-web-key": KEY, "content-type": "image/png" }, body: "hello" });
     assert.equal(notPicture.status, 400);

@@ -58,6 +58,7 @@ NO_PROXY=127.0.0.1 node test/run.mjs main
 | `history.mjs` | 网页上思考和工具的折叠、计数 |
 | `history-worker.mjs` | 本地 Worker 上的实时思考和工具记录（要起 Worker） |
 | `mini-app.mjs` | Mini App 进门（加 `worker` 再连本地 Worker 测一遍） |
+| `home-screen.mjs` | 加到主屏幕（`public/home-screen.js`、`public/sw.js`）：浏览器给的安装提示留着给按钮用、只用一次，聊天里在通知卡之后问一次、「以后再说」不再问、电脑上不问只留设置页那行；iPhone 和 iPad 给 Safari 的步骤；从主屏幕打开、安卓 App 里、Telegram 里都不出；图标、名字和 manifest 跟着页面上的住户；每个图标打开它自己的住户，不管这台浏览器上次开的是谁（跑真的 `app.js` 的 `start()`）；service worker 只接打开页面这一步，没网时给一页「连不上网」、网回来自己打开。加 `worker` 再连本地 Worker：第一个住户的 id 还是 `/`、从 `/?r=default` 打开，别的住户的从自己那页打开，头像写明类型、单独一个、maskable，没有的住户 404 |
 | `fold.mjs` | 门槛估算、交接信收哪些聊天、固定近期约 8000 token 和整轮边界 |
 | `letter-config.mjs` | 新门槛的校验、配置优先级和旧保留量字段移除 |
 | `letter-recovery.mjs` | 真实 SDK + Node SQLite 上的交接信恢复、旧版开头三条迁移、幂等和失败重试 |

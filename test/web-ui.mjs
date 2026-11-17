@@ -6,11 +6,11 @@ const html = readFileSync('public/index.html', 'utf8');
 const code = readFileSync('public/app.js', 'utf8');
 const markdown = readFileSync('public/markdown.js', 'utf8');
 // The parts app.js mixes into the page's state, as the page loads them.
-const mixins = { chatPermissionsPage: 'public/chat-permissions.js', groupPage: 'public/group.js', machinePage: 'public/machine.js', waitingPage: 'public/waiting.js', attachPage: 'public/attach.js', recommendedRolesPage: 'public/recommended-roles.js', chatStopPage: 'public/chat-stop.js' };
+const mixins = { chatPermissionsPage: 'public/chat-permissions.js', groupPage: 'public/group.js', machinePage: 'public/machine.js', waitingPage: 'public/waiting.js', attachPage: 'public/attach.js', recommendedRolesPage: 'public/recommended-roles.js', chatStopPage: 'public/chat-stop.js', homeScreenPage: 'public/home-screen.js' };
 assert.ok(html.includes('<script src="/app.js"></script>'), 'the page loads its script from /app.js');
 for (const file of Object.values(mixins)) assert.ok(html.includes(`<script src="/${file.slice('public/'.length)}"></script>`), `the page loads ${file}`);
 const resized = [];
-const context = vm.createContext({ document: { documentElement: { dataset: { theme: 'dark' } } }, localStorage: { getItem() { return ''; }, setItem() {}, removeItem() {} }, setTimeout, clearTimeout, console, Date, URL, Blob, TextDecoder, TextEncoder, atob, btoa, confirm: () => true, window: {}, ResizeObserver: class { constructor(fn) { resized.push(fn); } observe() {} } });
+const context = vm.createContext({ addEventListener() {}, document: { documentElement: { dataset: { theme: 'dark' } } }, localStorage: { getItem() { return ''; }, setItem() {}, removeItem() {} }, setTimeout, clearTimeout, console, Date, URL, Blob, TextDecoder, TextEncoder, atob, btoa, confirm: () => true, window: {}, ResizeObserver: class { constructor(fn) { resized.push(fn); } observe() {} } });
 vm.runInContext(markdown, context);
 vm.runInContext(readFileSync('public/machine-ask-kind.js', 'utf8'), context);
 vm.runInContext(code, context);
