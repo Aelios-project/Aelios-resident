@@ -160,7 +160,7 @@ async function call(config: TelegramConfig, method: string, payload: Record<stri
   });
 }
 
-// What the settings page asks Telegram waits this long at most.
+// Each settings-page Telegram request is bounded, including old-bot cleanup and menu setup.
 const ASK_TIMEOUT_MS = 8000;
 
 type Answer<T> = { ok: boolean; result?: T; description?: string };
@@ -318,15 +318,15 @@ export async function setWebhook(
     url,
     secret_token: secret,
     allowed_updates: ["message"]
-  });
+  }, ASK_TIMEOUT_MS);
   return { setWebhook: await webhook.json(), ...(await setMenu(config, miniAppUrl)) };
 }
 
 /** The commands, and with `miniAppUrl` (https) the default menu button opening it as a Mini App. Telegram's answers. */
 export async function setMenu(config: TelegramConfig, miniAppUrl?: string): Promise<{ setMyCommands: Answer<true>; setChatMenuButton?: Answer<true> }> {
-  const setMyCommands = await answer<true>(await call(config, "setMyCommands", { commands: COMMANDS }));
+  const setMyCommands = await answer<true>(await call(config, "setMyCommands", { commands: COMMANDS }, ASK_TIMEOUT_MS));
   if (!miniAppUrl) return { setMyCommands };
-  const menu = await call(config, "setChatMenuButton", { menu_button: { type: "web_app", text: MENU_BUTTON_TEXT, web_app: { url: miniAppUrl } } });
+  const menu = await call(config, "setChatMenuButton", { menu_button: { type: "web_app", text: MENU_BUTTON_TEXT, web_app: { url: miniAppUrl } } }, ASK_TIMEOUT_MS);
   return { setMyCommands, setChatMenuButton: await answer<true>(menu) };
 }
 
@@ -354,7 +354,7 @@ export async function webhookInfo(config: TelegramConfig): Promise<{ url: string
 
 /** The bot stops sending updates here (its token is being taken off). */
 export async function deleteWebhook(config: TelegramConfig): Promise<void> {
-  await call(config, "deleteWebhook", {}).catch(() => undefined);
+  await call(config, "deleteWebhook", {}, ASK_TIMEOUT_MS).catch(() => undefined);
 }
 
 /** The parts of a Telegram update the Worker reads before handing it to the resident. */
