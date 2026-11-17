@@ -4220,6 +4220,12 @@ export class Resident extends Think<Env> {
     return { id: this.residentId, name: this.cfg.RESIDENT_NAME?.trim() || DEFAULT_NAME, avatar: key ? `${residentPrefix(this.residentId)}/avatar/${key}` : null };
   }
 
+  /** The avatar's media type, for the home-screen app's icon: its address has no extension for a browser to go by. */
+  avatarType(): string | null {
+    const key = this.settings("avatar")?.value;
+    return key ? this.media().typeOf(key) : null;
+  }
+
   /** A new avatar from the web page: a square picture, made small there first. */
   webSetAvatar(bytes: Uint8Array): { name: string; avatar: string | null } | { error: string } {
     const type = sniff(bytes);

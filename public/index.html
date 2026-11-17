@@ -46,6 +46,7 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
 <script src="/progress.js"></script>
 <script src="/recommended-roles.js"></script>
 <script src="/chat-stop.js"></script>
+<script src="/home-screen.js"></script>
 <script src="/app.js"></script>
 <script defer src="/vendor/alpine-3.14.9.min.js"></script>
 </head>
@@ -179,6 +180,13 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
           <div class="t serif">关了这页，它也能找到你</div>
           <div class="note">它主动找你、线程做完、闹钟响了，都推到这台设备上。</div>
           <div class="acts"><button class="icon-btn sm primary" type="button" @click="enablePush()" :disabled="push.busy" title="打开通知" aria-label="打开通知"><i class="i i-bell" aria-hidden="true"></i></button><button class="icon-btn sm" type="button" @click="dismissPush()" title="以后再说" aria-label="以后再说"><i class="i i-x" aria-hidden="true"></i></button></div>
+        </div>
+      </template>
+      <template x-if="homeInvite()">
+        <div class="ccard" style="align-self: center; width: min(340px, 92%)">
+          <div class="t serif">放到主屏幕，点开就是它</div>
+          <div class="note" x-text="home.can === 'ios' ? '在 Safari 里点「分享」→「添加到主屏幕」，从那里打开还能收通知。' : '不用再开浏览器找它。'"></div>
+          <div class="acts"><button class="icon-btn sm primary" type="button" x-show="home.can === 'prompt'" @click="addToHome()" title="放到主屏幕" aria-label="放到主屏幕"><i class="i i-add-home" aria-hidden="true"></i></button><button class="icon-btn sm" type="button" @click="dismissHome()" title="以后再说" aria-label="以后再说"><i class="i i-x" aria-hidden="true"></i></button></div>
         </div>
       </template>
       <div class="empty" x-show="loaded && !lines.length && !outbox.length">还没有聊天。说句话吧。</div>
@@ -941,6 +949,11 @@ window.telegramReady = /(?:^#|[&#])tgWebAppData=/.test(location.hash) ? new Prom
               <button type="button" :aria-pressed="themePref === 'light'" @click="setTheme('light')" title="昼" aria-label="昼"><i class="i i-sun" aria-hidden="true"></i></button>
               <button type="button" :aria-pressed="themePref === 'auto'" @click="setTheme('auto')" title="跟系统" aria-label="跟系统"><i class="i i-auto" aria-hidden="true"></i></button>
             </div>
+          </div>
+          <div class="li" x-show="home.can">
+            <span class="name">主屏幕</span>
+            <span class="val" x-show="home.can === 'ios'">分享 →「添加到主屏幕」</span>
+            <button class="icon-btn sm" type="button" x-show="home.can === 'prompt'" @click="addToHome()" title="放到主屏幕" aria-label="放到主屏幕"><i class="i i-add-home" aria-hidden="true"></i></button>
           </div>
         </div>
         <p class="hint">这里存的优先；空着的用 Cloudflare 里同名的变量，再没有就用默认。key 和 bot token 只能填不能看。</p>

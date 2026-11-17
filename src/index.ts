@@ -15,6 +15,7 @@
 //   GET  /stickers/<key>                a sticker's picture for the web page (stickers.ts); the key is long and random
 //   GET  /avatar/<key>                  the resident's avatar, put up on the web page (public, like a sticker)
 //   GET  /manifest.webmanifest          the web page as an app for the home screen, with the resident's name and avatar
+//                                       (/r/<id>/manifest.webmanifest: another resident's, opening on it)
 //   POST /runner/v1/pair|heartbeat|poll|receipt|progress|permission   the paired machine's runner (machine.ts, Aelios-desktop packages/runner/PROTOCOL.md):
 //                                       pairing with a code from the settings page, then its own token as Bearer
 //   POST /box/v1/pair, GET /box/v1/link   a box (acp-box/) pairing with a code, then dialing in on a WebSocket with its
@@ -76,16 +77,20 @@ type At = { id: string; base: string };
 
 const residentOf = (env: Env, at: At) => getAgentByName(env.RESIDENT, at.id);
 
-/** What makes the web page an app to put on the home screen: its name and icon follow the resident's. */
-async function manifest(env: Env): Promise<Response> {
-  const { name, avatar } = await (await getAgentByName(env.RESIDENT, AGENT_NAME)).webIdentity();
-  const icons = [
-    ...(avatar ? [{ src: avatar, sizes: "512x512", purpose: "any" }] : []),
-    { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: avatar ? "maskable" : "any maskable" },
-    { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: avatar ? "maskable" : "any maskable" }
+/** What makes the web page an app to put on the home screen: its name and icon follow the resident's, and another
+ *  resident's is an app of its own that opens on it. The avatar is the only icon when there is one: its type is
+ *  written out (Chrome will not install with an icon it cannot tell the type of), and it is maskable too, so
+ *  Android fills its round icon with the picture rather than with the stock one. */
+async function manifest(env: Env, at: At): Promise<Response> {
+  const agent = await residentOf(env, at);
+  const [{ name, avatar }, type] = await Promise.all([agent.webIdentity(), agent.avatarType()]);
+  const start = at.id === AGENT_NAME ? "/" : `/?r=${at.id}`;
+  const icons = avatar && type ? [{ src: avatar, sizes: "512x512", type, purpose: "any maskable" }] : [
+    { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
+    { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" }
   ];
   return Response.json(
-    { name, short_name: name, start_url: "/", scope: "/", display: "standalone", background_color: "#070a16", theme_color: "#070a16", icons },
+    { id: start, name, short_name: name, start_url: start, scope: "/", display: "standalone", background_color: "#070a16", theme_color: "#070a16", icons },
     { headers: { "content-type": "application/manifest+json", "cache-control": "no-cache" } }
   );
 }
@@ -631,7 +636,7 @@ export default {
       if (url.pathname === WECOM_PATH) return await handleWecom(request, env, url, at);
       if (url.pathname === "/tg/setup") return await handleSetup(request, env, url, at);
       if (url.pathname.startsWith("/web/")) return await handleWeb(request, env, url, at);
-      if (url.pathname === "/manifest.webmanifest" && request.method === "GET" && id === AGENT_NAME) return await manifest(env);
+      if (url.pathname === "/manifest.webmanifest" && request.method === "GET") return await manifest(env, at);
       const avatar = url.pathname.match(/^\/avatar\/([0-9a-f]{32})$/);
       if (avatar && request.method === "GET") {
         const file = await (await residentOf(env, at)).avatarFile(avatar[1]);

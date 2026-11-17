@@ -65,6 +65,11 @@ export class MediaStore {
     return at >= row.size ? { type: row.type, bytes, seconds: row.seconds } : null;
   }
 
+  /** A kept file's media type, without reading the file. */
+  typeOf(key: string): string | null {
+    return this.sql<{ type: string }>`SELECT type FROM res_media WHERE key = ${key}`[0]?.type ?? null;
+  }
+
   /** Keeps `text` as the readable text of the file `key`. */
   putText(key: string, text: string): void {
     const saved = this.put("file", "text/markdown", new TextEncoder().encode(text));
