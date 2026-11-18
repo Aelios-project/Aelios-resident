@@ -769,7 +769,8 @@ export class Resident extends Think<Env> {
     const report = (status: string) => {
       this.ctx.waitUntil(this.ctx.storage.put("aelios_memory", { status, model: id, at: Date.now() }));
     };
-    return aeliosModel(memory, id, { auxiliary, report, thinking, redo: () => this.#redo, session: () => this.session.sessionId });
+    // Think uses an empty ID for its primary session. The Durable Object owns that transcript.
+    return aeliosModel(memory, id, { auxiliary, report, thinking, redo: () => this.#redo, session: () => this.ctx.id.toString() });
   }
 
   /**

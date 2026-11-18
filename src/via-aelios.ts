@@ -32,7 +32,7 @@ export const MEMORY_HEADER = "x-aelios-memory";
  * A reply asked for again (take-back.ts) sends the same request, so it carries a fresh id here to be recorded too.
  */
 export const REQUEST_ID_HEADER = "x-aelios-request-id";
-/** Stable SDK session identity, resolved at request time so a new session gets a new cache scope. */
+/** Stable conversation identity used by Aelios for upstream cache affinity. */
 export const SESSION_ID_HEADER = "x-aelios-session-id";
 
 /** The model name as Aelios takes it: as picked or typed, a bare Workers AI id under workers-ai/. */

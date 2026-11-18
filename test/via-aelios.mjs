@@ -190,7 +190,7 @@ test("listModels asks Aelios' model endpoint under the identity with the key, an
   } finally { globalThis.fetch = real; }
 });
 
-test("ChatGPT sends the live SDK session id across turns and model reconstruction; other providers keep their headers", async () => {
+test("ChatGPT sends the supplied session id across turns and model reconstruction", async () => {
   const real = globalThis.fetch;
   const sessions = [];
   globalThis.fetch = async (_url, init) => {

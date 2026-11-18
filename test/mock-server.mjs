@@ -500,7 +500,7 @@ const server = http.createServer(async (req, res) => {
   if (gateway) {
     const purpose = req.headers["x-aelios-purpose"] ?? null;
     log.push({ kind: `aelios.${gateway[2] === "messages" ? "messages" : "chat"}`, identity: gateway[1] ?? null, purpose,
-      apiKey: req.headers["x-api-key"], auth, body: json });
+      apiKey: req.headers["x-api-key"], auth, sessionId: req.headers["x-aelios-session-id"] ?? null, body: json });
     // Like Aelios: a model needs its provider prefix; one outside the identity's main models gets no memory.
     // "dropped" stands for a model taken off the main list after it was picked: its trial call passed.
     if (!json.model.includes("/")) return reply({ error: { message: `"${json.model}" has no provider prefix; use the author/model form` } }, 400);
