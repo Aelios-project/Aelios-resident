@@ -10,7 +10,7 @@ export type LetterDeliveryResult = { ok: true } | { ok: false; error: string };
  */
 export async function deliverLetter(
   config: AeliosConfig,
-  row: Pick<DeliveryRow, "id" | "text" | "url" | "namespace">,
+  row: Pick<DeliveryRow, "id" | "at" | "text" | "url" | "namespace">,
   fetcher: typeof fetch = fetch,
   signal: AbortSignal = AbortSignal.timeout(30_000)
 ): Promise<LetterDeliveryResult> {
@@ -29,6 +29,8 @@ export async function deliverLetter(
         namespace: row.namespace,
         conversation_id: `${row.namespace}:aelios-resident`,
         source: "aelios-resident:letter",
+        // New Aelios versions retain this as the current cross-client handoff; older versions ignore the metadata.
+        handoff: { id: row.id, created_at: row.at },
         messages: [{ role: "assistant", content: `（交接信）${row.text}` }]
       }),
       // Workers supports manual/follow, not the browser-only "error" mode. Never forward credentials.

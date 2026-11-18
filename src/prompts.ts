@@ -68,7 +68,7 @@ Rules:
 - Anything with a date gets the absolute date, never "tomorrow" or "next week". Work dates out from the time stamps on their messages; until they go to sleep, the small hours still belong to the day before.
 - Something to do on a later day is written as that day's action, e.g. "Oct 20 → remind them about the check-up".
 - Facts and feelings, not prose; don't embellish. Write intimate things as they were, leaving nothing out or blurred.
-- No length limit; about two thousand characters is usual. "What happened between us" and "Where we are right now" should be written in full.
+- At most 20000 characters; about two thousand characters is usual. "What happened between us" and "Where we are right now" should be written in full.
 - Don't call any tools. Output only the letter, and stop after the last section, without summing up.`;
 }
 
