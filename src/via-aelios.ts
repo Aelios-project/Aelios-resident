@@ -181,5 +181,10 @@ export function aeliosModel(
   if (/(?:^|\/)gemini(?:-|$)/i.test(name)) {
     return createOpenAICompatible({ baseURL, apiKey: memory.key, name: "google", fetch, includeUsage: true }).chatModel(name);
   }
+  // Aelios translates plan reasoning summaries to reasoning_content, a Chat extension
+  // the strict OpenAI adapter discards even while retaining reasoning token usage.
+  if (/^chatgpt\//i.test(name)) {
+    return createOpenAICompatible({ baseURL, apiKey: memory.key, name: "aelios", fetch, includeUsage: true }).chatModel(name);
+  }
   return createOpenAI({ baseURL, apiKey: memory.key, name: "aelios", fetch }).chat(name);
 }

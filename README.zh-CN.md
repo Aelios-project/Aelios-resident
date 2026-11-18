@@ -203,6 +203,7 @@ Telegram（选装）──▶ Worker（验 secret、白名单、命令）──�
 - 没选时用 `@cf/zai-org/glm-4.7-flash`，从 Aelios 过。
 - 以前存的自己的供应商模型（`custom/…`）不再支持：会用默认模型，选择器里有一行说明旧的选择已经去掉了。
 - Claude 填 `anthropic/claude-opus-5.5` 这种写法。每轮都带缓存标记，缓存默认留 1 小时（`CACHE_TTL`）。Claude 5 以后的模型每轮都会想，想的内容以摘要形式显示在「想了一下」里；想多久在设置页「思考和交接信」里调。
+- ChatGPT 套餐模型（`chatgpt/…`）收到 Aelios 返回的思考摘要时，会显示在「想了一下」里。用量中的 `think` token 数可以存在而没有可读摘要；GPT-6.2 默认思考强度下请求摘要，需要配合支持它的 Aelios 版本。
 - 接了 Aelios 时，选的模型都从 Aelios 过，用 Aelios 那边配好的 key。只有 `claude-code/…` 例外，它用你自己的 Claude 订阅（见[盒子](#盒子用自己的-claude-订阅和-kiro-额度)）。
 
 ### 人设
@@ -255,7 +256,7 @@ Telegram（选装）──▶ Worker（验 secret、白名单、命令）──�
 - 只存数字和工具名，聊天内容一个字都不存。超过 90 天的自动删。
 - 钱按 Anthropic 和 OpenAI 的官方价目表算，Kiro 按 1000 credits = 20 美元算。价目表写在代码里，按模型名对，Aelios 或中转加的前缀不影响。算的是在厂家自己的 API 上调这一下要多少钱：订阅包含的额度、中转自己的价、云平台的价或折扣都可能不一样。表里没有的模型没有价，只显示 token，总计里会写有几次没算进钱里。以后的版本加了新价，旧的行也按它算。
 - GPT-6.2 Sol 和 Astra 按 OpenAI Standard 价估算。每百万 token，Sol 的输入 / 缓存读 / 默认 30 分钟缓存写 / 输出分别是 $2 / $0.10 / $2.50 / $10；Astra 是 $8 / $0.40 / $10 / $40。总输入超过 272000 token 时，整次调用的输入和缓存价格翻倍，输出价格为普通价的 1.5 倍。
-- token 是服务商报回来的数。不报缓存写的服务商或中转就显示没有写；OpenAI 格式的只报缓存读。
+- token 是服务商报回来的数。OpenAI 格式带有 `prompt_tokens_details.cache_write_tokens` 时会读出缓存写入；不报缓存写的服务商或中转就显示没有写。GPT 缓存写按默认 30 分钟价格算，不跟 Claude 的缓存时长设置走。
 
 ## 功能细节
 

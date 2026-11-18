@@ -205,6 +205,7 @@ Tap the line under its name at the top of the web door (it shows the model in us
 - With no model chosen, it uses `@cf/zai-org/glm-4.7-flash`, through Aelios.
 - A model saved from the removed own-provider option (`custom/…`) is ignored: the default stands, and the picker says the old choice was removed.
 - Write Claude models like `anthropic/claude-opus-5.5`. Every turn carries a cache marker, and the cache is kept for 1 hour by default (`CACHE_TTL`). Claude 5 and later think on every turn; a summary of the thinking shows under 「想了一下」. Set how long it thinks under **Thinking & letters** (「思考和交接信」).
+- ChatGPT-plan models (`chatgpt/…`) display upstream reasoning summaries under 「想了一下」 when Aelios returns them. A `think` token count in Usage can exist without a readable summary; request default-effort GPT-6.2 summaries with an Aelios version that supports them.
 - With Aelios connected, every model goes through Aelios, using the keys configured there. The exception is `claude-code/…`, which runs on your own Claude subscription (see [Boxes](#boxes-your-claude-plan-and-your-kiro-credits)).
 
 ### Persona
@@ -257,7 +258,7 @@ On its page (tap its avatar at the top left), tap **Usage** (「用量」).
 - Only numbers and tool names are kept, never a word of the chat. Rows older than 90 days are deleted.
 - The cost comes from Anthropic's and OpenAI's published prices, built into the code and matched on the model's name, whatever prefix Aelios or a relay puts on it; Kiro's credits count at $20 for 1,000. It is what the call would cost on the maker's own API: a plan's included credit, a relay's own rates, a cloud platform's prices or a discount can differ. A model not in the list has no price: its tokens are shown, and the totals say how many calls were left out of the cost. A price added in a later version also prices older rows.
 - GPT-6.2 Sol and Astra are priced at OpenAI's Standard rates. Per million tokens, Sol is $2 input / $0.10 cache read / $2.50 default 30-minute cache write / $10 output; Astra is $8 / $0.40 / $10 / $40. Above 272,000 total input tokens, input and cache rates double and output is 1.5× for the whole call.
-- The tokens are what the provider reported. A provider or relay that does not report cache writes shows none; one on the OpenAI format reports cache reads only.
+- The tokens are what the provider reported. OpenAI-format cache writes are read from `prompt_tokens_details.cache_write_tokens` when present; a provider or relay that does not report writes shows none. GPT writes use the default 30-minute rate, independent of Claude's cache TTL setting.
 
 ## Features in detail
 

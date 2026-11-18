@@ -3,8 +3,8 @@
 // rows for today, 7 and 30 days, and lists them newest first. Rows older than USAGE_KEEP_DAYS are deleted.
 //
 // The tokens are what the model's provider reported for the call. A provider or relay that does not report cache
-// writes shows none; an OpenAI-style one reports cache reads only. What a call cost is worked out from Anthropic's
-// list prices (prices.ts) when it is read, so a price added later also prices older rows.
+// writes shows none; OpenAI-style cache writes are read from raw usage when the adapter has not normalized them.
+// What a call cost is worked out from list prices (prices.ts) when it is read, so a price added later also prices older rows.
 
 import type { LanguageModelUsage } from "ai";
 import { KIRO_USD_PER_CREDIT, LONG_PROMPTS, costAt, costOf, priceFor } from "./prices";
@@ -93,14 +93,18 @@ export function entryOf(step: StepLike, label: UsageLabel, at: number, ttl: "5m"
   if (!usage) return null;
   const total = count(usage.inputTokens);
   const cacheRead = count(usage.inputTokenDetails?.cacheReadTokens);
-  const cacheWrite = count(usage.inputTokenDetails?.cacheWriteTokens);
+  // The compatible Chat adapter retains new OpenAI cache-write fields in raw usage,
+  // but its normalized noCache count still includes those writes.
+  const chatDetails = (usage.raw as { prompt_tokens_details?: { cache_write_tokens?: unknown } } | undefined)?.prompt_tokens_details;
+  const rawWrites = usage.inputTokenDetails?.cacheWriteTokens == null && typeof chatDetails?.cache_write_tokens === "number";
+  const cacheWrite = rawWrites ? Math.min(Math.max(0, total - cacheRead), count(chatDetails.cache_write_tokens)) : count(usage.inputTokenDetails?.cacheWriteTokens);
   const noCache = usage.inputTokenDetails?.noCacheTokens;
-  const input = typeof noCache === "number" ? count(noCache) : Math.max(0, total - cacheRead - cacheWrite);
+  const input = !rawWrites && typeof noCache === "number" ? count(noCache) : Math.max(0, total - cacheRead - cacheWrite);
   const output = count(usage.outputTokens);
   if (!input && !cacheRead && !cacheWrite && !output) return null;
   const creation = (usage.raw as { cache_creation?: { ephemeral_1h_input_tokens?: unknown } } | undefined)?.cache_creation;
   const told = creation && typeof creation.ephemeral_1h_input_tokens === "number";
-  const cacheWrite1h = Math.min(cacheWrite, told ? count(creation.ephemeral_1h_input_tokens) : ttl === "1h" ? cacheWrite : 0);
+  const cacheWrite1h = rawWrites ? 0 : Math.min(cacheWrite, told ? count(creation.ephemeral_1h_input_tokens) : ttl === "1h" ? cacheWrite : 0);
   const tools = [...new Set((step.toolCalls ?? []).map((call) => String(call?.toolName ?? "").slice(0, 60)).filter(Boolean))].slice(0, 12);
   return {
     ...label,
