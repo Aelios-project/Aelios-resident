@@ -64,6 +64,7 @@ fresh letter-failures "node test/letter-failures.mjs"
 pair letter-restart "node test/letter-failures.mjs restart-1" "node test/letter-failures.mjs restart-2"
 pair native-tasks "node test/native-tasks.mjs first" "node test/native-tasks.mjs restart"
 pair cache-history-worker "node test/cache-history-worker.mjs first" "node test/cache-history-worker.mjs restart"
+pair gpt-session-worker "node test/gpt-session-worker.mjs first" "node test/gpt-session-worker.mjs restart"
 
 echo
 if [ ${#FAILED[@]} -eq 0 ]; then echo "all passed (logs in $DIR)"; else echo "${#FAILED[@]} failed: ${FAILED[*]}"; exit 1; fi
