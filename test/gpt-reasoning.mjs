@@ -36,10 +36,11 @@ try {
         assert.equal(String(url), "https://memory.example/test/v1/chat/completions");
         const body = JSON.parse(init.body); requests.push(body);
         assert.equal(body.model, id);
+        assert.equal(new Headers(init.headers).get("x-aelios-session-id"), "fixture-session");
         if (requests.length === 2) assert.equal(body.messages.filter(message => message.role === "tool").length, 1);
         return answer(body.stream, requests.length === 1, summary);
       };
-      const options = { model: aeliosModel(memory, id), prompt: "Run ping.", tools: { ping: tool({ inputSchema: jsonSchema({ type: "object", properties: { value: { type: "number" } }, required: ["value"] }), execute: async () => "pong" }) }, stopWhen: stepCountIs(2) };
+      const options = { model: aeliosModel(memory, id, { session: () => "fixture-session" }), prompt: "Run ping.", tools: { ping: tool({ inputSchema: jsonSchema({ type: "object", properties: { value: { type: "number" } }, required: ["value"] }), execute: async () => "pong" }) }, stopWhen: stepCountIs(2) };
       const result = stream ? streamText(options) : await generateText(options);
       const parts = []; const draft = new WebDraft("draft", 0, "web");
       if (stream) {

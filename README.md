@@ -205,7 +205,7 @@ Tap the line under its name at the top of the web door (it shows the model in us
 - With no model chosen, it uses `@cf/zai-org/glm-4.7-flash`, through Aelios.
 - A model saved from the removed own-provider option (`custom/…`) is ignored: the default stands, and the picker says the old choice was removed.
 - Write Claude models like `anthropic/claude-opus-5.5`. Every turn carries a cache marker, and the cache is kept for 1 hour by default (`CACHE_TTL`). Claude 5 and later think on every turn; a summary of the thinking shows under 「想了一下」. Set how long it thinks under **Thinking & letters** (「思考和交接信」).
-- ChatGPT-plan models (`chatgpt/…`) display upstream reasoning summaries under 「想了一下」 when Aelios returns them. A `think` token count in Usage can exist without a readable summary; request default-effort GPT-6.2 summaries with an Aelios version that supports them.
+- ChatGPT-plan models (`chatgpt/…`) display upstream reasoning summaries under 「想了一下」 when Aelios returns them. A `think` token count in Usage can exist without a readable summary; request default-effort GPT-6.2 summaries with an Aelios version that supports them. These calls also carry the SDK conversation's stable `x-aelios-session-id`; compatible Aelios versions scope it to the identity and use it for upstream cache affinity. The identifier follows the session rather than changing on every turn.
 - With Aelios connected, every model goes through Aelios, using the keys configured there. The exception is `claude-code/…`, which runs on your own Claude subscription (see [Boxes](#boxes-your-claude-plan-and-your-kiro-credits)).
 
 ### Persona

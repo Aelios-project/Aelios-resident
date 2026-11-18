@@ -203,7 +203,7 @@ Telegram（选装）──▶ Worker（验 secret、白名单、命令）──�
 - 没选时用 `@cf/zai-org/glm-4.7-flash`，从 Aelios 过。
 - 以前存的自己的供应商模型（`custom/…`）不再支持：会用默认模型，选择器里有一行说明旧的选择已经去掉了。
 - Claude 填 `anthropic/claude-opus-5.5` 这种写法。每轮都带缓存标记，缓存默认留 1 小时（`CACHE_TTL`）。Claude 5 以后的模型每轮都会想，想的内容以摘要形式显示在「想了一下」里；想多久在设置页「思考和交接信」里调。
-- ChatGPT 套餐模型（`chatgpt/…`）收到 Aelios 返回的思考摘要时，会显示在「想了一下」里。用量中的 `think` token 数可以存在而没有可读摘要；GPT-6.2 默认思考强度下请求摘要，需要配合支持它的 Aelios 版本。
+- ChatGPT 套餐模型（`chatgpt/…`）收到 Aelios 返回的思考摘要时，会显示在「想了一下」里。用量中的 `think` token 数可以存在而没有可读摘要；GPT-6.2 默认思考强度下请求摘要，需要配合支持它的 Aelios 版本。这条线路还会携带 SDK 会话的稳定 `x-aelios-session-id`，由支持它的 Aelios 版本按身份隔离并用于上游缓存路由；标识跟着会话走，不会每轮重建。
 - 接了 Aelios 时，选的模型都从 Aelios 过，用 Aelios 那边配好的 key。只有 `claude-code/…` 例外，它用你自己的 Claude 订阅（见[盒子](#盒子用自己的-claude-订阅和-kiro-额度)）。
 
 ### 人设

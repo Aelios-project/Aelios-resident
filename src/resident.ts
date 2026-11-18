@@ -769,7 +769,7 @@ export class Resident extends Think<Env> {
     const report = (status: string) => {
       this.ctx.waitUntil(this.ctx.storage.put("aelios_memory", { status, model: id, at: Date.now() }));
     };
-    return aeliosModel(memory, id, { auxiliary, report, thinking, redo: () => this.#redo });
+    return aeliosModel(memory, id, { auxiliary, report, thinking, redo: () => this.#redo, session: () => this.session.sessionId });
   }
 
   /**
