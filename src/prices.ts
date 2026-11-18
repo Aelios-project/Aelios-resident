@@ -1,6 +1,6 @@
 // List prices in US dollars per million tokens: Claude as published on
 // https://platform.claude.com/docs/en/about-claude/pricing (copied 2026-11-10), GPT as published on
-// https://developers.openai.com/api/docs/pricing (standard tier, copied 2026-11-09; GPT-5.6 Sol's price there is a
+// https://developers.openai.com/api/docs/pricing (standard tier, GPT-6.2 checked 2026-11-18; older rows copied 2026-11-09; GPT-5.6 Sol's price there is a
 // promotion until 2026-11-30). The usage timeline (usage.ts) prices each call with them, matched on the model's name, so
 // it is what the call would cost on the maker's own API: a plan's included credit, a relay with its own rates, a cloud
 // platform's prices or regional processing can differ. A model that is not here has no price, and the page shows its
@@ -51,6 +51,8 @@ const PRICES: Record<string, Price> = {
   "haiku-5-5": price(0.1, 0.125, 0.2, 0.01, 0.5),
   "haiku-4-5": price(1, 1.25, 2, 0.1, 5),
   "haiku-3-5": price(0.8, 1, 1.6, 0.08, 4),
+  "gpt-6.2-astra": gpt(8, 0.4, 10, 40),
+  "gpt-6.2-sol": gpt(2, 0.1, 2.5, 10),
   "gpt-6-astra": gpt(10, 1, 12.5, 50),
   "gpt-6.1-sol": gpt(2, 0.1, 2.5, 10),
   "gpt-6.1-terra": gpt(1, 0.05, 1.25, 5),
@@ -83,6 +85,8 @@ export const LONG_PROMPTS = [100_000, 272_000] as const;
 const [HAIKU_LONG, GPT_LONG] = LONG_PROMPTS;
 const LONG_PRICES: Record<string, { over: number; price: Price }> = {
   "haiku-5-5": { over: HAIKU_LONG, price: price(0.5, 0.625, 1, 0.05, 2.5) },
+  "gpt-6.2-astra": { over: GPT_LONG, price: gpt(16, 0.8, 20, 60) },
+  "gpt-6.2-sol": { over: GPT_LONG, price: gpt(4, 0.2, 5, 15) },
   "gpt-6-astra": { over: GPT_LONG, price: gpt(20, 2, 25, 75) },
   "gpt-6.1-sol": { over: GPT_LONG, price: gpt(4, 0.2, 5, 15) },
   "gpt-6.1-terra": { over: GPT_LONG, price: gpt(2, 0.1, 2.5, 7.5) },

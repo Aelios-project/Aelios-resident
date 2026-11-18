@@ -44,6 +44,8 @@ for (const [name, key] of [
   ["openai/gpt-5.6-sol", "gpt-5.6-sol"],
   ["custom-x/openai/GPT-6.1-Sol", "gpt-6.1-sol"],
   ["gpt-4.1-2025-04-14", "gpt-4.1"],
+  ["chatgpt/gpt-6.2-sol", "gpt-6.2-sol"],
+  ["openai/gpt-6.2-astra-2026-11-18", "gpt-6.2-astra"],
   ["gpt-5.5-pro", "gpt-5.5-pro"],
   ["gpt-5-chat-latest", null],
   ["gpt-5.3-codex", null],
@@ -87,6 +89,16 @@ assert.equal(u.priceFor("gpt-6.1-sol", 272_001).input, 4);
 assert.equal(u.priceFor("gpt-5.6-sol", 150_000).input, 4);
 assert.equal(u.priceFor("gpt-5-mini", 900_000).input, 0.25);
 near(u.costOf("openai/gpt-6.1-sol", { input: 400, cacheRead: 600, cacheWrite: 0, cacheWrite1h: 0, output: 20 }), (400 * 2 + 600 * 0.1 + 20 * 10) / 1e6);
+for (const [name, standard, long] of [
+  ["chatgpt/gpt-6.2-sol", { input: 2, write5m: 2.5, write1h: 2.5, read: 0.1, output: 10 }, { input: 4, write5m: 5, write1h: 5, read: 0.2, output: 15 }],
+  ["openai/gpt-6.2-astra", { input: 8, write5m: 10, write1h: 10, read: 0.4, output: 40 }, { input: 16, write5m: 20, write1h: 20, read: 0.8, output: 60 }]
+]) {
+  assert.deepEqual(u.priceFor(name), standard);
+  assert.deepEqual(u.priceFor(name, 272_000), standard);
+  assert.deepEqual(u.priceFor(name, 272_001), long);
+  const tokens = { input: 400, cacheRead: 1024, cacheWrite: 1536, cacheWrite1h: 0, output: 50 };
+  near(u.costOf(name, tokens), (400 * standard.input + 1024 * standard.read + 1536 * standard.write5m + 50 * standard.output) / 1e6);
+}
 assert.equal(u.KIRO_USD_PER_CREDIT, 0.02);
 console.log("PASS GPT is priced at OpenAI's list price, long prompts past 272,000 tokens at the long rate, and Kiro at $20 for 1,000 credits");
 
