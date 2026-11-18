@@ -190,6 +190,29 @@ test("listModels asks Aelios' model endpoint under the identity with the key, an
   } finally { globalThis.fetch = real; }
 });
 
+test("ChatGPT sends the live SDK session id across turns and model reconstruction; other providers keep their headers", async () => {
+  const real = globalThis.fetch;
+  const sessions = [];
+  globalThis.fetch = async (_url, init) => {
+    sessions.push(new Headers(init.headers).get("x-aelios-session-id"));
+    return Response.json({ id: "c", object: "chat.completion", created: 0, model: "m", choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" }] });
+  };
+  try {
+    const memory = { url: "https://a.example", key: "k", namespace: "default", identity: "res" };
+    let session = "sdk-session-a";
+    const options = { session: () => session };
+    const model = aeliosModel(memory, "chatgpt/gpt-6.2-sol", options);
+    const call = model => model.doGenerate({ prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }] });
+    await call(model); await call(model);
+    await call(aeliosModel(memory, "chatgpt/gpt-6.2-sol", options));
+    session = "sdk-session-b";
+    await call(model);
+    await call(aeliosModel(memory, "openai/gpt-5", options));
+    await call(aeliosModel(memory, "chatgpt/gpt-6.2-sol", { auxiliary: true }));
+    assert.deepEqual(sessions, ["sdk-session-a", "sdk-session-a", "sdk-session-a", "sdk-session-b", null, null]);
+  } finally { globalThis.fetch = real; }
+});
+
 test("a reply asked for again goes to Aelios with a request id of its own, so it is recorded as a new exchange", async () => {
   const real = globalThis.fetch;
   const ids = [];

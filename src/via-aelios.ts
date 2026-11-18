@@ -32,6 +32,8 @@ export const MEMORY_HEADER = "x-aelios-memory";
  * A reply asked for again (take-back.ts) sends the same request, so it carries a fresh id here to be recorded too.
  */
 export const REQUEST_ID_HEADER = "x-aelios-request-id";
+/** Stable SDK session identity, resolved at request time so a new session gets a new cache scope. */
+export const SESSION_ID_HEADER = "x-aelios-session-id";
 
 /** The model name as Aelios takes it: as picked or typed, a bare Workers AI id under workers-ai/. */
 export function aeliosName(id: string): string {
@@ -139,7 +141,7 @@ export type Thinking = { effort: Effort | null };
 /** The id a reply asked for again goes out with (REQUEST_ID_HEADER), or null. */
 export type Redo = () => string | null;
 
-function sender(messages: boolean, auxiliary: boolean, report?: MemoryReport, thinking?: Thinking, redo?: Redo, completionTokens = false): typeof fetch {
+function sender(messages: boolean, auxiliary: boolean, report?: MemoryReport, thinking?: Thinking, redo?: Redo, completionTokens = false, session?: () => string | null): typeof fetch {
   return async (input, init) => {
     // Like every request to Aelios: the key is not carried to a redirect target.
     if (typeof init?.body !== "string") return fetch(input, { ...init, redirect: "manual" });
@@ -149,6 +151,8 @@ function sender(messages: boolean, auxiliary: boolean, report?: MemoryReport, th
     if (!hers) headers.set(PURPOSE_HEADER, "auxiliary");
     const again = redo?.();
     if (again) headers.set(REQUEST_ID_HEADER, again);
+    const sessionId = session?.();
+    if (sessionId) headers.set(SESSION_ID_HEADER, sessionId);
     // Claude's earlier thinking goes back without its blocks, for the reason in claude-run.ts.
     if (messages) body = withoutOldThinkingIn(body);
     if (messages && thinking) body = withThinking(body, thinking.effort);
@@ -170,16 +174,21 @@ function sender(messages: boolean, auxiliary: boolean, report?: MemoryReport, th
 export function aeliosModel(
   memory: AeliosConfig,
   id: string,
-  { auxiliary = false, report, thinking, redo }: { auxiliary?: boolean; report?: MemoryReport; thinking?: Thinking; redo?: Redo } = {}
+  { auxiliary = false, report, thinking, redo, session }: { auxiliary?: boolean; report?: MemoryReport; thinking?: Thinking; redo?: Redo; session?: () => string | null } = {}
 ): LanguageModel {
   const name = aeliosName(id);
   const baseURL = aeliosBase(memory);
   if (onMessages(id)) return createAnthropic({ baseURL, apiKey: memory.key, fetch: sender(true, auxiliary, report, thinking, redo) })(name);
-  const fetch = sender(false, auxiliary, report, undefined, redo, takesCompletionTokens(name));
+  const fetch = sender(false, auxiliary, report, undefined, redo, takesCompletionTokens(name), /^chatgpt\//i.test(name) ? session : undefined);
   // Gemini's OpenAI-compatible responses carry signed tool calls in extra_content.
   // The compatible adapter preserves those signatures as per-call provider metadata.
   if (/(?:^|\/)gemini(?:-|$)/i.test(name)) {
     return createOpenAICompatible({ baseURL, apiKey: memory.key, name: "google", fetch, includeUsage: true }).chatModel(name);
+  }
+  // Aelios translates plan reasoning summaries to reasoning_content, a Chat extension
+  // the strict OpenAI adapter discards even while retaining reasoning token usage.
+  if (/^chatgpt\//i.test(name)) {
+    return createOpenAICompatible({ baseURL, apiKey: memory.key, name: "aelios", fetch, includeUsage: true }).chatModel(name);
   }
   return createOpenAI({ baseURL, apiKey: memory.key, name: "aelios", fetch }).chat(name);
 }
