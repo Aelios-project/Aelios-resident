@@ -65,7 +65,7 @@ NO_PROXY=127.0.0.1 node test/run.mjs main
 | `letter-recovery.mjs` | 真实 SDK + Node SQLite 上的交接信恢复、旧版开头三条迁移、幂等和失败重试 |
 | `letter-recovery-schedule.mjs` | 真实 SDK Scheduler/Lifecycle + Node SQLite，复现旧恢复任务自去重，并验证连续三次恢复唤醒不会丢失 |
 | `letter-state.mjs` | SQLite 写信状态与 outbox 持久化、事务、claim/崩溃租约、六次预算与退避、目标绑定及手动重试 |
-| `letter-delivery.mjs` | 发送凭据校验、安全错误、网络异常、目标与 key 轮换、用户状态文案 |
+| `letter-delivery.mjs` | 发送凭据校验、安全错误、网络异常、目标与 key 轮换、用户状态文案；当前信携带固定投递 ID 和原始写信时间，重试保持同一份请求 |
 | `via-aelios.mjs` | 从 Aelios 过的规矩，以及 Aelios 的模型清单怎么读（`modelsOf`、`listModels`）；重回的那条带自己的请求号去 Aelios |
 | `gemini-signatures.mjs` | Real AI SDK adapters with synthetic HTTP: streamed and non-streamed Gemini tool signatures, three parallel calls, continued text, JSON history round-trip through Agents' message builder and `convertToModelMessages`, and unchanged non-Gemini routing. No network or credentials. |
 | `persona-edit.mjs` | 住户自己改人设（`src/persona-edit.ts`）：加在末尾（空一行）、换掉一段、删掉一段，别的一字不动；找不到、出现不止一次、改完是空的、超过 30000 字、带「Claude Code」的都不改；改了才存、一样的不存，写交接信那一轮不改；说明里没有关于思考的话 |

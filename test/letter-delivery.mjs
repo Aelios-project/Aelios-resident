@@ -10,7 +10,7 @@ async function load(path) {
 const { deliverLetter } = await load("src/letter-delivery.ts");
 const { letterWriteStatus, letterDeliveryStatus } = await load("src/letter-status.ts");
 const config = { url: "https://memory.example", namespace: "default", key: "PRIVATE_KEY", identity: "resident" };
-const row = { id: "letter-stable", text: "PRIVATE_LETTER", url: config.url, namespace: config.namespace };
+const row = { id: "letter-stable", at: 1790000000000, text: "PRIVATE_LETTER", url: config.url, namespace: config.namespace };
 const receipt = () => Response.json({ data: { conversation_id: "default:aelios-resident", message_ids: ["saved-message"] } });
 
 test("a receipt, not just a 2xx status, confirms one letter's delivery", async () => {
@@ -24,6 +24,7 @@ test("a receipt, not just a 2xx status, confirms one letter's delivery", async (
     assert.ok(init.signal instanceof AbortSignal);
     assert.deepEqual(JSON.parse(init.body), {
       namespace: "default", conversation_id: "default:aelios-resident", source: "aelios-resident:letter",
+      handoff: { id: row.id, created_at: row.at },
       messages: [{ role: "assistant", content: `（交接信）${row.text}` }]
     });
     return receipt();
