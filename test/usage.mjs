@@ -46,6 +46,9 @@ for (const [name, key] of [
   ["gpt-4.1-2025-04-14", "gpt-4.1"],
   ["chatgpt/gpt-6.2-sol", "gpt-6.2-sol"],
   ["openai/gpt-6.2-astra-2026-11-18", "gpt-6.2-astra"],
+  ["openrouter/openai/gpt-6.2-astra-pro", "gpt-6.2-astra"],
+  ["openrouter/openai/gpt-6.2-sol-pro-20261117", "gpt-6.2-sol"],
+  ["openrouter/openai/gpt-6.2-astra-pro:batch", null],
   ["gpt-5.5-pro", "gpt-5.5-pro"],
   ["gpt-5-chat-latest", null],
   ["gpt-5.3-codex", null],
@@ -91,7 +94,8 @@ assert.equal(u.priceFor("gpt-5-mini", 900_000).input, 0.25);
 near(u.costOf("openai/gpt-6.1-sol", { input: 400, cacheRead: 600, cacheWrite: 0, cacheWrite1h: 0, output: 20 }), (400 * 2 + 600 * 0.1 + 20 * 10) / 1e6);
 for (const [name, standard, long] of [
   ["chatgpt/gpt-6.2-sol", { input: 2, write5m: 2.5, write1h: 2.5, read: 0.1, output: 10 }, { input: 4, write5m: 5, write1h: 5, read: 0.2, output: 15 }],
-  ["openai/gpt-6.2-astra", { input: 8, write5m: 10, write1h: 10, read: 0.4, output: 40 }, { input: 16, write5m: 20, write1h: 20, read: 0.8, output: 60 }]
+  ["openai/gpt-6.2-astra", { input: 8, write5m: 10, write1h: 10, read: 0.4, output: 40 }, { input: 16, write5m: 20, write1h: 20, read: 0.8, output: 60 }],
+  ["openrouter/openai/gpt-6.2-astra-pro", { input: 8, write5m: 10, write1h: 10, read: 0.4, output: 40 }, { input: 16, write5m: 20, write1h: 20, read: 0.8, output: 60 }]
 ]) {
   assert.deepEqual(u.priceFor(name), standard);
   assert.deepEqual(u.priceFor(name, 272_000), standard);
@@ -161,6 +165,13 @@ assert.deepEqual(
   { input: u.entryOf(openai, label, 1, "1h").input, read: u.entryOf(openai, label, 1, "1h").cacheRead, write: u.entryOf(openai, label, 1, "1h").cacheWrite },
   { input: 400, read: 600, write: 0 }
 );
+// A normalized GPT write must not inherit the resident's Claude cache lifetime.
+const pro = u.entryOf({ ...openai, model: { modelId: "openrouter/openai/gpt-6.2-astra-pro" }, usage: {
+  ...openai.usage, inputTokenDetails: { noCacheTokens: 250, cacheReadTokens: 600, cacheWriteTokens: 150 },
+  outputTokenDetails: { reasoningTokens: 12 }
+} }, label, 1, "1h");
+assert.deepEqual([pro.input, pro.cacheRead, pro.cacheWrite, pro.cacheWrite1h, pro.output, pro.reasoning], [250, 600, 150, 0, 20, 12]);
+near(u.costOf(pro.model, pro), (250 * 8 + 600 * 0.4 + 150 * 10 + 20 * 40) / 1e6);
 // Nothing reported, nothing recorded.
 assert.equal(u.entryOf({ usage: { inputTokens: undefined, inputTokenDetails: {}, outputTokens: undefined, outputTokenDetails: {} } }, label, 1, "1h"), null);
 assert.equal(u.entryOf({}, label, 1, "1h"), null);
@@ -243,8 +254,12 @@ const oldSql = (strings, ...values) => {
   return [];
 };
 old.exec("CREATE TABLE res_usage (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, model TEXT NOT NULL, kind TEXT NOT NULL, via TEXT NOT NULL, step INTEGER NOT NULL, input INTEGER NOT NULL, cache_read INTEGER NOT NULL, cache_write INTEGER NOT NULL, cache_write_1h INTEGER NOT NULL, output INTEGER NOT NULL, reasoning INTEGER NOT NULL, tools TEXT NOT NULL)");
-old.exec("INSERT INTO res_usage VALUES (1, 5, 'm', 'chat', 'web', 0, 1, 0, 0, 0, 1, 0, '')");
+old.exec("INSERT INTO res_usage VALUES (1, 5, 'openrouter/openai/gpt-6.2-astra-pro', 'chat', 'telegram', 0, 250, 600, 150, 150, 20, 12, '')");
 const migrated = new u.UsageStore(oldSql);
-assert.equal(migrated.rows(null).rows[0].credits, 0);
+const oldPro = migrated.rows(null).rows[0];
+assert.equal(oldPro.credits, 0);
+near(oldPro.cost, u.costOf(pro.model, pro));
+near(migrated.totals(0).cost, oldPro.cost);
+assert.equal(migrated.totals(0).unpriced, 0);
 console.log("PASS credits rows are priced into the totals, each model takes its own long-prompt rate, and an older table gets the column");
 console.log("PASS the store sums today, 7 and 30 days from her midnight, pages back by row, prices on reading, and drops rows older than 90 days");

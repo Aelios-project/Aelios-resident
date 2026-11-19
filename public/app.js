@@ -2081,11 +2081,12 @@ function resident() {
     },
     rowNums(row) {
       var n = function (v) { return v.toLocaleString('en-US'); };
-      var write = 'write ' + n(row.cacheWrite) + (!row.cacheWrite ? '' : row.cacheWrite1h === row.cacheWrite ? ' (1h)' : row.cacheWrite1h ? ' (1h ' + n(row.cacheWrite1h) + ')' : ' (5m)');
+      var showTtl = row.cacheWrite && !/(?:^|\/)gpt-/i.test(row.model);
+      var write = 'write ' + n(row.cacheWrite) + (!showTtl ? '' : row.cacheWrite1h === row.cacheWrite ? ' (1h)' : row.cacheWrite1h ? ' (1h ' + n(row.cacheWrite1h) + ')' : ' (5m)');
       return 'new ' + n(row.input) + ' · read ' + n(row.cacheRead) + ' · ' + write + ' · out ' + n(row.output) + (row.reasoning ? ' (think ' + n(row.reasoning) + ')' : '');
     },
     usageNote() {
-      return '钱按 Anthropic、OpenAI 官方价估，Kiro 按 1000 credits = $20 算，订阅额度、中转和别家的实际花费会不一样；表里没有的模型只记 token。new 是没走缓存的输入，read、write 是从缓存读、往缓存写（1h、5m 是写进 1 小时还是 5 分钟的缓存），out 是输出（think 是其中想的部分），in 是 new、read、write 加起来，hit 是 read 占 in 的比例。只留最近 ' + this.usage.keepDays + ' 天。';
+      return '钱按 Anthropic、OpenAI 官方价估，Kiro 按 1000 credits = $20 算，订阅额度、中转和别家的实际花费会不一样；表里没有的模型只记 token。GPT Pro 的用量包含内部多次推理的合计。new 是没走缓存的输入，read、write 是从缓存读、往缓存写（Claude 会标出 1h 或 5m），out 是输出（think 是其中想的部分），in 是 new、read、write 加起来，hit 是 read 占 in 的比例。只留最近 ' + this.usage.keepDays + ' 天。';
     },
 
     // ---- persona ----

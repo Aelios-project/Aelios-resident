@@ -86,7 +86,7 @@ const count = (value: unknown): number => (typeof value === "number" && Number.i
 
 /**
  * The row for a step; null when the provider reported no tokens. Anthropic says how much of a cache write went to
- * the one-hour cache; when a provider does not, the write is taken to be the TTL the resident asked for.
+ * the one-hour cache; when a provider does not, the Claude cache setting supplies the fallback.
  */
 export function entryOf(step: StepLike, label: UsageLabel, at: number, ttl: "5m" | "1h"): UsageEntry | null {
   const usage = step.usage;
@@ -104,12 +104,14 @@ export function entryOf(step: StepLike, label: UsageLabel, at: number, ttl: "5m"
   if (!input && !cacheRead && !cacheWrite && !output) return null;
   const creation = (usage.raw as { cache_creation?: { ephemeral_1h_input_tokens?: unknown } } | undefined)?.cache_creation;
   const told = creation && typeof creation.ephemeral_1h_input_tokens === "number";
-  const cacheWrite1h = rawWrites ? 0 : Math.min(cacheWrite, told ? count(creation.ephemeral_1h_input_tokens) : ttl === "1h" ? cacheWrite : 0);
+  const model = String(step.model?.modelId || step.response?.modelId || "").slice(0, 200);
+  const claudeTtl = ttl === "1h" && !rawWrites && !/(?:^|\/)gpt-/i.test(model);
+  const cacheWrite1h = Math.min(cacheWrite, told ? count(creation.ephemeral_1h_input_tokens) : claudeTtl ? cacheWrite : 0);
   const tools = [...new Set((step.toolCalls ?? []).map((call) => String(call?.toolName ?? "").slice(0, 60)).filter(Boolean))].slice(0, 12);
   return {
     ...label,
     at,
-    model: String(step.model?.modelId || step.response?.modelId || "").slice(0, 200),
+    model,
     step: count(step.stepNumber),
     input,
     cacheRead,
