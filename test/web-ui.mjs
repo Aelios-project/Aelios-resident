@@ -920,6 +920,7 @@ assert.equal(timeline.rowNums(firstRows[0]), 'new 12 · read 30,000 · write 400
 assert.equal(timeline.rowNums({ ...firstRows[0], cacheWrite1h: 0 }), 'new 12 · read 30,000 · write 400 (5m) · out 250 (think 80)');
 assert.equal(timeline.rowNums({ ...firstRows[0], cacheWrite1h: 100 }), 'new 12 · read 30,000 · write 400 (1h 100) · out 250 (think 80)');
 assert.equal(timeline.rowNums(firstRows[1]), 'new 2,000 · read 0 · write 0 · out 100');
+assert.equal(timeline.rowNums({ ...firstRows[0], model: 'openrouter/openai/gpt-6.2-astra-pro' }), 'new 12 · read 30,000 · write 400 · out 250 (think 80)');
 assert.equal(timeline.money(1.234), '$1.23');
 assert.equal(timeline.money(0.00042), '$0.0004');
 await timeline.moreUsage();

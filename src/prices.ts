@@ -113,6 +113,8 @@ export const KIRO_USD_PER_CREDIT = 20 / 1000;
 export function priceKey(model: string): string | null {
   // A GPT is named exactly, past any prefix and without its date: gpt-5-chat is not gpt-5.
   const own = model.toLowerCase().split("/").pop()!.replace(/[@[].*$/, "").replace(/-\d{4}-?\d{2}-?\d{2}$/, "");
+  // OpenRouter's GPT-6.2 Pro aliases use the base model's rates, including the long-prompt tier.
+  if (own === "gpt-6.2-astra-pro" || own === "gpt-6.2-sol-pro") return own.slice(0, -4);
   if (own.startsWith("gpt-")) return own in PRICES ? own : null;
   const name = model.toLowerCase().replace(/\./g, "-");
   // A version is one or two digits; a date after it (eight digits) is not part of it.
